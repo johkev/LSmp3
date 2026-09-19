@@ -51,6 +51,7 @@ Tjenesten skal bare brukes med innhold du har rett til å laste ned eller konver
 ## Medieverktøy
 
 FASE 4 bruker `yt-dlp` for kompatible mediekilder og `FFmpeg` for MP3/MP4-behandling. Spotify-URL-er sendes separat til `spotDL`, som må være installert og konfigurert på serveren. Spotify støttes bare som MP3 i denne versjonen.
+FASE 4 bruker `yt-dlp` for kompatible mediekilder og `FFmpeg` for lyd/video-behandling. Spotify-URL-er sendes separat til `spotDL`. spotDL finner musikk på YouTube og legger på Spotify-metadata/albumart; det henter ikke beskyttet lyd direkte fra Spotify. Bruk bare innhold du har rett til å bruke.
 
 På Debian-serveren installeres grunnverktøyene normalt slik, én kommando om gangen:
 
@@ -59,6 +60,7 @@ sudo apt update
 sudo apt install ffmpeg python3 python3-venv
 python3 -m venv ~/laensmann-tools
 ~/laensmann-tools/bin/pip install -U yt-dlp spotdl
+spotdl --download-deno
 ```
 
 Test deretter verktøyene:
@@ -69,6 +71,7 @@ Test deretter verktøyene:
 ffmpeg -version
 ```
 
+På Windows må `yt-dlp.exe`, `spotdl.exe` og `ffmpeg.exe` være installert og tilgjengelige i `PATH` når `npm start` kjøres. Serveren bruker `spawn()` med argument-array og setter aldri brukerens URL inn i en shell-streng.
 På Windows må `yt-dlp.exe`, `spotdl.exe` og `ffmpeg.exe` være installert og tilgjengelige i `PATH` når `npm start` kjøres. Serveren bruker `spawn()` med argument-array og setter aldri brukerens URL inn i en shell-streng.
 
 ## Jobb-API
@@ -92,8 +95,13 @@ Mulige statuser er `queued`, `processing`, `completed`, `failed` og `expired`.
 ## FASE 4: Lyd og video
 
 `format` kan være `mp3` eller `mp4`. MP3 bruker valgt bitrate. MP4 bruker valgt oppløsning (`1080`, `720`, `480` eller `360`). Ferdige filer lastes ned fra `/api/jobs/:id/download` og slettes etter vellykket sending.
+`format` kan være `mp3`, `m4a`, `flac`, `ogg`, `opus`, `wav`, `mp4`, `mkv` eller `webm`. Lyd bruker bitrate (`96` til `320 kbps`), og video bruker oppløsning (`360p` til `2160p / 4K`). Spotify støtter lydformatene som spotDL dokumenterer: MP3, FLAC, OGG/OPUS, M4A og WAV. Ferdige filer lastes ned fra `/api/jobs/:id/download`.
 
 YouTube-spillelister kan behandles som flere filer. Statuspanelet viser tilgjengelig tittel, thumbnail, antall elementer, samlet varighet og estimert størrelse. Når en jobb inneholder flere filer, pakkes resultatet automatisk som én ZIP-fil før nedlasting.
+
+Lagringsmålet kan velges som midlertidig eller serverbibliotek. `temporary` bruker `downloads/` og slettes etter nedlasting. `media` bruker `MEDIA_DIR`, som standard `/mnt/media2/Lænsmann Studio`, og blir liggende der.
+
+Et lite **status**-punkt nederst på siden åpner jobbloggen for feilsøking. API-et er `GET /api/jobs/:id/logs`.
 
 Kopier `.env.example` til `.env` hvis du trenger andre lokale innstillinger. `.env` skal ikke committes.
 

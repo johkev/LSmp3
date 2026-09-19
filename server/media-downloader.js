@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const archiver = require('archiver');
 
 const downloadsDirectory = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, '..', 'downloads'));
+const mediaDirectory = path.resolve(process.env.MEDIA_DIR || '/mnt/media2/Lænsmann Studio');
 const jobTimeout = Number(process.env.JOB_TIMEOUT) || 600000;
 
 function isSpotifyUrl(url) {
@@ -14,19 +15,22 @@ function isSpotifyUrl(url) {
 
 function buildCommand({ url, format, quality, jobDirectory }) {
   if (isSpotifyUrl(url)) {
-    if (format !== 'mp3') throw new Error('Spotify støttes bare med MP3-format.');
+    if (!['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
+      throw new Error('Spotify støtter bare lydformatene MP3, M4A, FLAC, OGG, OPUS og WAV.');
+    }
     return {
       command: process.platform === 'win32' ? 'spotdl.exe' : 'spotdl',
-      args: ['download', url, '--output', path.join(jobDirectory, '{artist} - {title}.{output-ext}'), '--format', 'mp3', '--bitrate', `${quality}k`]
+      args: ['download', url, '--output', path.join(jobDirectory, '{artist} - {title}.{output-ext}'), '--format', format, '--bitrate', `${quality}k`]
     };
   }
 
   const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s-%(id)s.%(ext)s');
   const args = ['--yes-playlist', '--newline', '--restrict-filenames', '--max-filesize', '500M', '--output', outputTemplate];
-  if (format === 'mp3') {
-    args.push('--extract-audio', '--audio-format', 'mp3', '--audio-quality', `${quality}K`);
+  if (['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
+    const audioFormat = format === 'ogg' ? 'vorbis' : format;
+    args.push('--extract-audio', '--audio-format', audioFormat, '--audio-quality', `${quality}K`);
   } else {
-    args.push('--format', `bestvideo*[height<=${quality}]+bestaudio/best[height<=${quality}]`, '--merge-output-format', 'mp4');
+    args.push('--format', `bestvideo*[height<=${quality}]+bestaudio/best[height<=${quality}]`, '--merge-output-format', format);
   }
   args.push(url);
   return { command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp', args };
@@ -39,16 +43,89 @@ function buildInspectCommand(url) {
   };
 }
 
-function formatMetadata(entries) {
-  const items = entries.filter((entry) => entry && (entry.title || entry.id));
-  const first = items[0] || {};
+function buildSearchCommand(source, query) {
+  const prefix = source === 'soundcloud' ? 'scsearch5' : source === 'youtube-music' ? 'ytmsearch5' : 'ytsearch5';
   return {
-    title: first.playlist_title || first.title || 'Mediejobb',
-    thumbnail: first.thumbnail || null,
+    command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
+    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', `${prefix}:${query}`]
+  };
+}
+
+function searchSpotify(query) {
+  return new Promise((resolve, reject) => {
+    const command = process.platform === 'win32' ? 'spotdl.exe' : 'spotdl';
+    const child = spawn(command, ['save', query, '--save-file', '-', '--headless'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (error) => reject(error.code === 'ENOENT' ? new Error('spotDL er ikke installert på serveren.') : error));
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim().split('\n').pop() || 'Spotify-søket feilet.'));
+        return;
+      }
+      try {
+        const saved = JSON.parse(stdout);
+        const songs = Array.isArray(saved) ? saved : saved.songs || saved;
+        resolve((Array.isArray(songs) ? songs : []).map((song) => ({
+          id: song.song_id || song.id || song.name,
+          title: song.name || song.title || 'Spotify-resultat',
+          url: song.url || song.webpage_url || '',
+          thumbnail: song.album?.image || song.album_art || null,
+          duration: song.duration || 0,
+          uploader: song.artist || song.artists?.join(', ') || 'Spotify'
+        })).filter((result) => result.url));
+      } catch {
+        reject(new Error('spotDL returnerte ikke lesbare Spotify-resultater.'));
+      }
+    });
+  });
+}
+
+async function searchMedia(source, query) {
+  if (source === 'spotify') return searchSpotify(query);
+  const { command, args } = buildSearchCommand(source, query);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (error) => reject(error.code === 'ENOENT' ? new Error(`${command} er ikke installert på serveren.`) : error));
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim().split('\n').pop() || 'Søket feilet.'));
+        return;
+      }
+      try {
+        const result = JSON.parse(stdout);
+        resolve((result.entries || []).filter((entry) => entry && entry.url).map((entry) => ({
+          id: entry.id || entry.url,
+          title: entry.title || 'Uten tittel',
+          url: entry.webpage_url || entry.url,
+          thumbnail: entry.thumbnail || null,
+          duration: entry.duration || 0,
+          uploader: entry.uploader || entry.channel || source
+        })));
+      } catch {
+        reject(new Error('Kunne ikke lese søkeresultatene.'));
+      }
+    });
+  });
+}
+
+function formatMetadata(metadata) {
+  const entries = metadata.entries || [metadata];
+  const items = entries.filter((entry) => entry && (entry.title || entry.id));
+  const first = items[0] || metadata || {};
+  return {
+    title: metadata.playlist_title || first.playlist_title || first.title || 'Mediejobb',
+    thumbnail: metadata.thumbnail || first.thumbnail || null,
     itemCount: items.length || 1,
     duration: items.reduce((total, entry) => total + (Number(entry.duration) || 0), 0),
     estimatedSize: items.reduce((total, entry) => total + (Number(entry.filesize_approx) || 0), 0),
-    isPlaylist: items.length > 1 || Boolean(first.playlist_count && first.playlist_count > 1)
+    isPlaylist: items.length > 1 || Boolean(metadata.playlist_count && metadata.playlist_count > 1)
   };
 }
 
@@ -68,7 +145,7 @@ async function inspectMedia(url) {
       }
       try {
         const metadata = JSON.parse(stdout);
-        resolve(formatMetadata(metadata.entries || [metadata]));
+        resolve(formatMetadata(metadata));
       } catch {
         reject(new Error('Kunne ikke lese medieinformasjonen.'));
       }
@@ -104,14 +181,16 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, url, format, quality, onProgress, onMetadata }) {
-  const jobDirectory = path.join(downloadsDirectory, jobId);
+async function runDownload({ jobId, url, format, quality, saveMode, onProgress, onMetadata, onLog }) {
+  const rootDirectory = saveMode === 'media' ? mediaDirectory : downloadsDirectory;
+  const jobDirectory = path.join(rootDirectory, jobId);
   await fs.mkdir(jobDirectory, { recursive: true });
   const metadata = isSpotifyUrl(url)
     ? { title: 'Spotify-jobb', thumbnail: null, itemCount: 1, duration: 0, estimatedSize: 0, isPlaylist: false }
     : await inspectMedia(url);
   onMetadata(metadata);
   const { command, args } = buildCommand({ url, format, quality, jobDirectory });
+  onLog(`Starter ${command} (${format})`);
   console.log(`[INFO] Starter ${command} for jobb ${jobId}`);
 
   return new Promise((resolve, reject) => {
@@ -136,7 +215,11 @@ async function runDownload({ jobId, url, format, quality, onProgress, onMetadata
         if (progress !== null) onProgress(progress);
       }
     });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      for (const line of text.split(/\r?\n/).filter(Boolean)) onLog(line.slice(0, 500));
+    });
     child.on('error', (error) => finish(error.code === 'ENOENT' ? new Error(`${command} er ikke installert på serveren.`) : error));
     child.on('close', async (code) => {
       if (code !== 0) {
@@ -153,7 +236,8 @@ async function runDownload({ jobId, url, format, quality, onProgress, onMetadata
   });
 }
 
-async function removeJobFiles(jobId) {
+async function removeJobFiles(jobId, saveMode = 'temporary') {
+  if (saveMode === 'media') return;
   await fs.rm(path.join(downloadsDirectory, jobId), { recursive: true, force: true });
 }
 
@@ -173,4 +257,4 @@ async function cleanupDownloads() {
   }
 }
 
-module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, removeJobFiles, runDownload };
+module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, removeJobFiles, runDownload, searchMedia };

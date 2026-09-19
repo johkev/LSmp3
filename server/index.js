@@ -1,7 +1,8 @@
 const path = require('node:path');
 const express = require('express');
-const { createJob, getJob, getJobRecord, shutdownJobs } = require('./job-store');
-const { cleanupDownloads, removeJobFiles } = require('./media-downloader');
+const { createJob, getJob, getJobLogs, getJobRecord, shutdownJobs } = require('./job-store');
+const { cleanupDownloads, removeJobFiles, searchMedia } = require('./media-downloader');
+const { addSystemLog, getSystemLogs } = require('./log-store');
 
 const app = express();
 const port = Number(process.env.PORT) || 3002;
@@ -19,8 +20,29 @@ app.get('/api/health', (request, response) => {
   });
 });
 
+app.get('/api/search', async (request, response) => {
+  const query = String(request.query.q || '').trim();
+  const source = String(request.query.source || 'youtube');
+  if (query.length < 2 || query.length > 200) {
+    return response.status(400).json({ error: 'Søket må være mellom 2 og 200 tegn.' });
+  }
+  if (!['youtube', 'youtube-music', 'soundcloud', 'spotify'].includes(source)) {
+    return response.status(400).json({ error: 'Søkekilden støttes ikke.' });
+  }
+  try {
+    return response.json({ source, results: await searchMedia(source, query) });
+  } catch (error) {
+    addSystemLog('ERROR', `Søk (${source}): ${error.message}`);
+    return response.status(502).json({ error: error.message });
+  }
+});
+
+app.get('/api/logs', (request, response) => {
+  return response.json({ logs: getSystemLogs() });
+});
+
 app.post('/api/jobs', (request, response) => {
-  const { url, format = 'mp3', quality = '320' } = request.body || {};
+  const { url, format = 'mp3', quality = '320', saveMode = 'temporary' } = request.body || {};
 
   let parsedUrl;
   try {
@@ -33,22 +55,29 @@ app.post('/api/jobs', (request, response) => {
     return response.status(400).json({ error: 'URL-en må bruke http eller https.' });
   }
 
-  if (!['mp3', 'mp4'].includes(format)) {
+  const audioFormats = ['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'];
+  const videoFormats = ['mp4', 'mkv', 'webm'];
+  if (![...audioFormats, ...videoFormats].includes(format)) {
     return response.status(400).json({ error: 'Formatet støttes ikke.' });
   }
 
   const hostname = parsedUrl.hostname.toLowerCase();
   const isSpotify = hostname === 'spotify.com' || hostname.endsWith('.spotify.com');
-  if (isSpotify && format !== 'mp3') {
-    return response.status(400).json({ error: 'Spotify støttes bare med MP3-format.' });
+  if (isSpotify && !audioFormats.includes(format)) {
+    return response.status(400).json({ error: 'Spotify støtter bare lydformatene MP3, M4A, FLAC, OGG, OPUS og WAV.' });
   }
 
-  const validQualities = format === 'mp4' ? ['360', '480', '720', '1080'] : ['128', '192', '256', '320'];
+  const validQualities = videoFormats.includes(format) ? ['360', '480', '720', '1080', '1440', '2160'] : ['96', '128', '160', '192', '256', '320'];
   if (!validQualities.includes(String(quality))) {
     return response.status(400).json({ error: 'Kvaliteten støttes ikke.' });
   }
 
-  const job = createJob({ url: parsedUrl.toString(), format, quality: String(quality) });
+  if (!['temporary', 'media'].includes(saveMode)) {
+    return response.status(400).json({ error: 'Lagringsmålet støttes ikke.' });
+  }
+
+  const job = createJob({ url: parsedUrl.toString(), format, quality: String(quality), saveMode });
+  addSystemLog('INFO', `Jobb ${job.jobNumber} opprettet`);
   return response.status(202).json(job);
 });
 
@@ -61,6 +90,12 @@ app.get('/api/jobs/:id', (request, response) => {
   return response.json(job);
 });
 
+app.get('/api/jobs/:id/logs', (request, response) => {
+  const logs = getJobLogs(request.params.id);
+  if (!logs) return response.status(404).json({ error: 'Jobben finnes ikke.' });
+  return response.json({ jobId: request.params.id, logs: [...getSystemLogs(), ...logs] });
+});
+
 app.get('/api/jobs/:id/download', (request, response) => {
   const job = getJobRecord(request.params.id);
   if (!job) return response.status(404).json({ error: 'Jobben finnes ikke.' });
@@ -71,9 +106,11 @@ app.get('/api/jobs/:id/download', (request, response) => {
       if (!response.headersSent) response.status(500).json({ error: 'Kunne ikke sende filen.' });
       return;
     }
-    await removeJobFiles(job.jobId);
-    job.status = 'expired';
-    job.outputFile = null;
+    if (job.saveMode === 'temporary') {
+      await removeJobFiles(job.jobId, job.saveMode);
+      job.status = 'expired';
+      job.outputFile = null;
+    }
   });
 });
 
@@ -89,6 +126,7 @@ app.use((error, request, response, next) => {
   }
 
   console.error('[ERROR] Uventet serverfeil', error);
+  addSystemLog('ERROR', error.message || 'Uventet serverfeil');
   return response.status(500).json({ error: 'En intern serverfeil oppstod.' });
 });
 

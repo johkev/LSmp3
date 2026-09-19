@@ -22,16 +22,16 @@
       <header class="topbar">
         <a class="brand" href="./" aria-label="Lænsmann MP3 hjem">
           <span class="brand-mark" aria-hidden="true"><img src="favicon/favicon.svg" alt="" /></span>
-          <span><strong>LÆNSMANN</strong><small>MP3 / MP4</small></span>
+          <span><strong>LÆNSMANN</strong><small>HEI SNUPPA :)</small></span>
         </a>
         <a class="status-chip" href="https://www.lensmann.studio/">TILBAKE TIL STUDIO <span aria-hidden="true">↗</span></a>
       </header>
 
       <main>
         <section class="hero" aria-labelledby="page-title">
-
-          <h1 id="page-title">Youtube<br /><em>Spotify</em></h1>
-         
+          <p class="eyebrow">LÆNSMANN STUDIO SIN NEDLASTING VERKTØY<span>01</span></p>
+          <h1 id="page-title">Enkel<br /><em>Nedlasting</em></h1>
+          <p class="intro">Bruk en link eller søk etter innhold fra støttede kilder. Velg resultatet, formatet og hvor filen skal lagres.</p>
         </section>
 
         <section class="converter-panel" aria-labelledby="converter-title">
@@ -40,34 +40,62 @@
               <p class="eyebrow">NY JOBB <span>02</span></p>
               <h2 id="converter-title">Klargjør konvertering</h2>
             </div>
-            <span class="job-number">JOB / 0001</span>
+            <span class="job-number" id="job-number">JOB / KLAR</span>
           </div>
 
           <form id="converter-form" novalidate>
-            <label class="field-label" for="media-url">Medieadresse</label>
+            <div class="input-mode" role="tablist" aria-label="Inndatatype">
+              <button class="mode-button is-active" id="url-mode" type="button" role="tab" aria-selected="true">LENKE</button>
+              <button class="mode-button" id="search-mode" type="button" role="tab" aria-selected="false">SØK</button>
+            </div>
+            <div id="url-entry">
+              <label class="field-label" for="media-url">Medieadresse</label>
             <div class="url-field">
               <span class="url-icon" aria-hidden="true">↗</span>
               <input id="media-url" name="url" type="url" autocomplete="url" placeholder="https://youtube.com/..." required />
               <button class="clear-button" id="clear-url" type="button" aria-label="Tøm medieadresse" hidden>×</button>
             </div>
-            <p class="field-hint" id="url-hint">Støtter kompatible mediekilder og Spotify-lenker. Bruk bare innhold du har rett til å bruke.</p>
+            <p class="field-hint" id="url-hint">Støtter Soundcloud, YouTube og Spotify-lenker.</p>
+            </div>
+            <div id="search-entry" hidden>
+              <label class="field-label" for="search-query">Søk etter innhold</label>
+              <div class="search-row">
+                <input id="search-query" type="search" placeholder="artist, video eller spilleliste..." autocomplete="off" />
+                <select id="search-source" aria-label="Søkekilde">
+                  <option value="youtube">YouTube</option>
+                  <option value="youtube-music">YouTube Music</option>
+                  <option value="soundcloud">SoundCloud</option>
+                  <option value="spotify">Spotify</option>
+                </select>
+                <button class="search-button" id="search-button" type="button">SØK</button>
+              </div>
+              <p class="field-hint">Søk viser resultater først. Ingenting lastes ned før du velger et resultat.</p>
+              <div class="search-results" id="search-results" aria-live="polite"></div>
+            </div>
 
             <div class="options-grid">
               <label class="select-field">
                 <span class="field-label">Format</span>
                 <select id="format" name="format">
                   <option value="mp3">MP3 / lyd</option>
+                  <option value="m4a">M4A / lyd</option>
+                  <option value="flac">FLAC / tapsfri lyd</option>
+                  <option value="ogg">OGG / lyd</option>
+                  <option value="opus">OPUS / lyd</option>
+                  <option value="wav">WAV / lyd</option>
                   <option value="mp4">MP4 / video</option>
+                  <option value="mkv">MKV / video</option>
+                  <option value="webm">WEBM / video</option>
                 </select>
               </label>
               <label class="select-field">
                 <span class="field-label">Kvalitet</span>
                 <select id="quality" name="quality">
-                  <option value="320">320 kbps</option>
-                  <option value="256">256 kbps</option>
-                  <option value="192">192 kbps</option>
-                  <option value="128">128 kbps</option>
                 </select>
+              </label>
+              <label class="check-field">
+                <input id="save-mode" name="saveMode" type="checkbox" />
+                <span><strong>Lagre på Serveren</strong><small>Skjåen til LS</small></span>
               </label>
             </div>
 
@@ -101,8 +129,27 @@
 
       <footer class="footer">
         <span>© 2026 LÆNSMANN STUDIO</span>
-
+        <span class="footer-divider">LAGET AV MEG <button class="kevin-trigger" id="kevin-trigger" type="button">KEVIN JOHNSEN</button> :)</span>
+        <button class="diagnostics-button" id="diagnostics-button" type="button">© 2026 LÆNSMANN STUDIO · TEKNISK INFO</button>
       </footer>
+    </div>
+
+    <section class="logs-panel" id="logs-panel" hidden aria-labelledby="logs-title">
+      <div class="logs-panel-heading">
+        <div><p class="eyebrow">DIAGNOSTIKK</p><h2 id="logs-title">Status og jobblogg</h2></div>
+        <button class="logs-close" id="logs-close" type="button" aria-label="Lukk jobblogg">×</button>
+      </div>
+      <div class="logs-status" id="logs-status">Ingen aktiv jobb.</div>
+      <pre id="logs-content">Start en jobb for å se teknisk status.</pre>
+    </section>
+
+    <div class="kevin-modal" id="kevin-modal" hidden role="dialog" aria-modal="true" aria-labelledby="kevin-modal-title">
+      <div class="kevin-modal-card">
+        <button class="kevin-modal-close" id="kevin-modal-close" type="button" aria-label="Lukk bilde">×</button>
+        <p class="eyebrow">LAGET AV</p>
+        <h2 id="kevin-modal-title">Kevin Johnsen</h2>
+        <img src="heisnuppa.png" alt="Kevin Johnsen" />
+      </div>
     </div>
   </body>
 </html>

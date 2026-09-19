@@ -1,16 +1,20 @@
 const { randomUUID } = require('node:crypto');
 const { removeJobFiles, runDownload } = require('./media-downloader');
+const { addSystemLog } = require('./log-store');
 
 const jobs = new Map();
-const maxConcurrentJobs = Number(process.env.MAX_CONCURRENT_JOBS) || 2;
+const maxConcurrentJobs = Number(process.env.MAX_CONCURRENT_JOBS) || 5;
 let activeJobs = 0;
+let nextJobNumber = 1;
 
-function createJob({ url, format, quality }) {
+function createJob({ url, format, quality, saveMode = 'temporary' }) {
   const job = {
     jobId: randomUUID(),
+    jobNumber: nextJobNumber++,
     url,
     format,
     quality,
+    saveMode,
     status: 'queued',
     progress: 0,
     metadata: null,
@@ -36,12 +40,15 @@ function getJobRecord(jobId) {
 function publicJob(job) {
   return {
     jobId: job.jobId,
+    jobNumber: job.jobNumber,
     status: job.status,
     progress: job.progress,
     format: job.format,
+    saveMode: job.saveMode,
     ...(job.metadata ? { metadata: job.metadata } : {}),
     ...(job.filename ? { filename: job.filename } : {}),
     ...(job.error ? { error: job.error } : {}),
+    ...(job.logs ? { logCount: job.logs.length } : {}),
     createdAt: job.createdAt
   };
 }
@@ -53,24 +60,31 @@ function processQueue() {
 
   activeJobs += 1;
   nextJob.status = 'processing';
+  addLog(nextJob, `Jobb startet: ${nextJob.format}, lagring=${nextJob.saveMode}`);
+  addSystemLog('INFO', `Jobb ${nextJob.jobNumber} startet`);
   console.log(`[INFO] Job started ${nextJob.jobId}`);
 
   runDownload({
     ...nextJob,
     onProgress: (progress) => { nextJob.progress = progress; },
-    onMetadata: (metadata) => { nextJob.metadata = metadata; }
+    onMetadata: (metadata) => { nextJob.metadata = metadata; addLog(nextJob, `Metadata mottatt: ${metadata.title}`); },
+    onLog: (message) => addLog(nextJob, message)
   })
     .then((outputFile) => {
       nextJob.progress = 100;
       nextJob.status = 'completed';
       nextJob.outputFile = outputFile;
       nextJob.filename = outputFile.split(/[\\/]/).pop();
+      addLog(nextJob, 'Nedlasting og behandling fullført.');
+      addSystemLog('INFO', `Jobb ${nextJob.jobNumber} fullført`);
       console.log(`[INFO] Job completed ${nextJob.jobId}`);
     })
     .catch(async (error) => {
       nextJob.status = 'failed';
       nextJob.error = error.message;
-      await removeJobFiles(nextJob.jobId);
+      addLog(nextJob, `FEIL: ${error.message}`);
+      addSystemLog('ERROR', `Jobb ${nextJob.jobNumber}: ${error.message}`);
+      await removeJobFiles(nextJob.jobId, nextJob.saveMode);
       console.error(`[ERROR] Job failed ${nextJob.jobId}: ${error.message}`);
     })
     .finally(() => {
@@ -79,10 +93,21 @@ function processQueue() {
     });
 }
 
+function addLog(job, message) {
+  if (!job.logs) job.logs = [];
+  job.logs.push({ time: new Date().toISOString(), message: String(message).slice(0, 500) });
+  if (job.logs.length > 200) job.logs.shift();
+}
+
+function getJobLogs(jobId) {
+  const job = jobs.get(jobId);
+  return job ? job.logs || [] : null;
+}
+
 function shutdownJobs() {
   for (const job of jobs.values()) {
-    if (job.status === 'processing') removeJobFiles(job.jobId);
+    if (job.status === 'processing') removeJobFiles(job.jobId, job.saveMode);
   }
 }
 
-module.exports = { createJob, getJob, getJobRecord, shutdownJobs };
+module.exports = { createJob, getJob, getJobLogs, getJobRecord, shutdownJobs };

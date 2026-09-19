@@ -67,7 +67,7 @@ test('Spotify-video blir avvist', async () => {
   const body = await response.json();
 
   assert.equal(response.status, 400);
-  assert.equal(body.error, 'Spotify støttes bare med MP3-format.');
+  assert.match(body.error, /Spotify støtter bare lydformatene/);
 });
 
 test('ugyldig kvalitet blir avvist', async () => {
