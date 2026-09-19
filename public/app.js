@@ -333,16 +333,6 @@ async function cancelCurrentJob() {
 
 cancelButton.addEventListener('click', cancelCurrentJob);
 
-function cancelWhenLeavingPage() {
-  if (!currentJobId || cancelButton.hidden) return;
-  fetch(`/api/jobs/${currentJobId}`, { method: 'DELETE', keepalive: true }).catch(() => {});
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') cancelWhenLeavingPage();
-});
-window.addEventListener('pagehide', cancelWhenLeavingPage);
-
 diagnosticsButton.addEventListener('click', async () => {
   logsPanel.hidden = false;
   if (!currentJobId) {

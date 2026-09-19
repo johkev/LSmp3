@@ -25,12 +25,12 @@ function buildCommand({ url, format, quality, jobDirectory }) {
   }
 
   const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s.%(ext)s');
-  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', 'node', '--embed-metadata', '--embed-thumbnail', '--output', outputTemplate];
+  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', 'node', '--concurrent-fragments', '8', '--retries', '5', '--fragment-retries', '5', '--embed-metadata', '--embed-thumbnail', '--output', outputTemplate];
   if (['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
     const audioFormat = format === 'ogg' ? 'vorbis' : format;
     args.push('--extract-audio', '--audio-format', audioFormat, '--audio-quality', `${quality}K`);
   } else {
-    args.push('--format', `bestvideo*[height<=${quality}]+bestaudio/best[height<=${quality}]`, '--merge-output-format', format);
+    args.push('--format', `bestvideo*[height<=${quality}]+bestaudio/best[height<=${quality}]/bestvideo*+bestaudio/best`, '--merge-output-format', format);
   }
   args.push(url);
   return { command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp', args };

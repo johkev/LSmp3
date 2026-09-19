@@ -9,6 +9,14 @@ const port = Number(process.env.PORT) || 3002;
 const host = process.env.HOST || '127.0.0.1';
 const publicDirectory = path.join(__dirname, '..', 'public');
 
+function normalizeMediaUrl(value) {
+  const parsedUrl = new URL(value);
+  if (parsedUrl.hostname.toLowerCase().endsWith('youtube.com') && parsedUrl.pathname === '/watch' && parsedUrl.searchParams.get('v')) {
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(parsedUrl.searchParams.get('v'))}`;
+  }
+  return parsedUrl.toString();
+}
+
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
 
@@ -76,7 +84,8 @@ app.post('/api/jobs', (request, response) => {
     return response.status(400).json({ error: 'Lagringsmålet støttes ikke.' });
   }
 
-  const job = createJob({ url: parsedUrl.toString(), format, quality: String(quality), saveMode });
+  const normalizedUrl = normalizeMediaUrl(parsedUrl.toString());
+  const job = createJob({ url: normalizedUrl, format, quality: String(quality), saveMode });
   addSystemLog('INFO', `Jobb ${job.jobNumber} opprettet`);
   return response.status(202).json(job);
 });
@@ -105,7 +114,9 @@ app.delete('/api/jobs/:id', (request, response) => {
 app.get('/api/jobs/:id/download', (request, response) => {
   const job = getJobRecord(request.params.id);
   if (!job) return response.status(404).json({ error: 'Jobben finnes ikke.' });
-  if (job.status !== 'completed') return response.status(409).json({ error: 'Filen er ikke klar ennå.' });
+  if (job.status !== 'completed') {
+    return response.status(409).type('text').send('Filen er ikke klar ennå. Vent til jobben er ferdig.');
+  }
 
   return response.download(job.outputFile, job.filename, async (error) => {
     if (error) {
