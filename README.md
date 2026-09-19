@@ -101,6 +101,23 @@ Det er ingen brukerbasert rate limit eller kvote. Brukeren kan starte så mange 
 
 Serveren beholder tekniske grenser for stabilitet: maksimalt to samtidige workers, maksimal filstørrelse på 500 MB og timeout på 10 minutter per jobb. Disse hindrer én feil eller ekstrem jobb fra å stoppe hele serveren, men begrenser ikke hvor mange jobber brukeren kan kjøre totalt.
 
-## Neste fase
+## Automatisk deployment
 
-Neste arbeid er testdekning og deretter Apache/systemd-deployment. Backend skal ikke eksponeres direkte mot internett.
+Workflowen [.github/workflows/deploy.yml](.github/workflows/deploy.yml) kjører tester på hver push til `main`. Hvis testene passerer, kobler GitHub Actions seg til Debian-serveren med SSH, henter siste commit, kjører `npm ci`, restarter `mp3-api.service` og sjekker health-endepunktet.
+
+### GitHub Secrets
+
+Opprett disse secrets under **Settings → Secrets and variables → Actions**:
+
+- `SERVER_HOST` - offentlig IP eller hostname til Debian-serveren
+- `SERVER_USER` - `kevin`
+- `SERVER_SSH_KEY` - privat SSH-nøkkel for deployment
+- `SERVER_KNOWN_HOSTS` - resultatet fra `ssh-keyscan` for serveren
+
+Private key og `.env` skal aldri legges i repositoryet.
+
+### Serverforberedelse
+
+Deploy-brukeren må kunne restarte akkurat denne tjenesten uten passord. Dette konfigureres senere med en begrenset sudo-regel for `systemctl restart mp3-api.service` og `systemctl is-active mp3-api.service`. Ikke bruk full `NOPASSWD: ALL`.
+
+Når secrets og serverregelen er klare, tester du deployment med en vanlig push til `main`. Backend skal ikke eksponeres direkte mot internett.
