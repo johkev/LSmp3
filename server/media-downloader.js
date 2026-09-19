@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createWriteStream } = require('node:fs');
 const { spawn } = require('node:child_process');
-const archiver = require('archiver');
+const { Archiver } = require('archiver');
 
 const downloadsDirectory = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, '..', 'downloads'));
 const mediaDirectory = path.resolve(process.env.MEDIA_DIR || '/mnt/media2/Lænsmann Studio');
@@ -170,7 +170,7 @@ async function createArchive(jobDirectory, files) {
   const archivePath = path.join(jobDirectory, 'laensmann-playlist.zip');
   await new Promise((resolve, reject) => {
     const output = createWriteStream(archivePath);
-    const archive = archiver('zip', { zlib: { level: 6 } });
+    const archive = new Archiver('zip', { zlib: { level: 6 } });
     output.on('close', resolve);
     output.on('error', reject);
     archive.on('error', reject);
