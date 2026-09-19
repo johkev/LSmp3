@@ -7,6 +7,7 @@ const { Archiver } = require('archiver');
 const downloadsDirectory = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, '..', 'downloads'));
 const mediaDirectory = path.resolve(process.env.MEDIA_DIR || '/mnt/media2/Lænsmann Studio');
 const jobTimeout = Number(process.env.JOB_TIMEOUT) || 600000;
+const jsRuntime = process.env.JS_RUNTIME || 'node';
 
 function isSpotifyUrl(url) {
   const hostname = new URL(url).hostname.toLowerCase();
@@ -25,7 +26,7 @@ function buildCommand({ url, format, quality, jobDirectory }) {
   }
 
   const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s.%(ext)s');
-  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', 'node', '--concurrent-fragments', '8', '--retries', '5', '--fragment-retries', '5', '--embed-metadata', '--embed-thumbnail', '--output', outputTemplate];
+  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', jsRuntime, '--concurrent-fragments', '8', '--retries', '5', '--fragment-retries', '5', '--embed-metadata', '--embed-thumbnail', '--output', outputTemplate];
   if (['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
     const audioFormat = format === 'ogg' ? 'vorbis' : format;
     args.push('--extract-audio', '--audio-format', audioFormat, '--audio-quality', `${quality}K`);
@@ -39,7 +40,7 @@ function buildCommand({ url, format, quality, jobDirectory }) {
 function buildInspectCommand(url) {
   return {
     command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
-    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', '--js-runtimes', 'node', url]
+    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', '--js-runtimes', jsRuntime, url]
   };
 }
 
@@ -47,7 +48,7 @@ function buildSearchCommand(source, query) {
   const prefix = source === 'soundcloud' ? 'scsearch5' : 'ytsearch5';
   return {
     command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
-    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', '--js-runtimes', 'node', `${prefix}:${query}`]
+    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', '--js-runtimes', jsRuntime, `${prefix}:${query}`]
   };
 }
 
