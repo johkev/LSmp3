@@ -1,5 +1,5 @@
 const { randomUUID } = require('node:crypto');
-const { removeJobFiles, runDownload } = require('./media-downloader');
+const { moveToMediaDirectory, removeJobFiles, runDownload } = require('./media-downloader');
 const { addSystemLog } = require('./log-store');
 
 const jobs = new Map();
@@ -18,6 +18,7 @@ function createJob({ url, format, quality, saveMode = 'temporary' }) {
     status: 'queued',
     progress: 0,
     metadata: null,
+    items: [],
     createdAt: new Date().toISOString(),
     outputFile: null
   };
@@ -37,6 +38,17 @@ function getJobRecord(jobId) {
   return jobs.get(jobId) || null;
 }
 
+function cancelJob(jobId) {
+  const job = jobs.get(jobId);
+  if (!job) return null;
+  if (['completed', 'failed', 'cancelled', 'expired'].includes(job.status)) return job;
+  job.cancelRequested = true;
+  job.status = 'cancelled';
+  addLog(job, 'Jobb avbrutt av brukeren.');
+  if (job.process) job.process.kill('SIGTERM');
+  return job;
+}
+
 function publicJob(job) {
   return {
     jobId: job.jobId,
@@ -46,6 +58,7 @@ function publicJob(job) {
     format: job.format,
     saveMode: job.saveMode,
     ...(job.metadata ? { metadata: job.metadata } : {}),
+    ...(job.items.length ? { items: job.items } : {}),
     ...(job.filename ? { filename: job.filename } : {}),
     ...(job.error ? { error: job.error } : {}),
     ...(job.logs ? { logCount: job.logs.length } : {}),
@@ -67,19 +80,40 @@ function processQueue() {
   runDownload({
     ...nextJob,
     onProgress: (progress) => { nextJob.progress = progress; },
-    onMetadata: (metadata) => { nextJob.metadata = metadata; addLog(nextJob, `Metadata mottatt: ${metadata.title}`); },
+    onMetadata: (metadata) => {
+      nextJob.metadata = metadata;
+      nextJob.items = (metadata.items || []).map((item) => ({ ...item, status: 'queued', progress: 0 }));
+      addLog(nextJob, `Metadata mottatt: ${metadata.title}`);
+    },
+    onItemProgress: (index, progress, total) => {
+      const item = nextJob.items.find((entry) => entry.index === index);
+      if (item) { item.status = progress >= 100 ? 'completed' : 'processing'; item.progress = progress; }
+      if (!item && total) nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress });
+    },
+    onProcess: (process) => {
+      nextJob.process = process;
+      if (nextJob.cancelRequested) process.kill('SIGTERM');
+    },
     onLog: (message) => addLog(nextJob, message)
   })
-    .then((outputFile) => {
+    .then(async (outputFile) => {
       nextJob.progress = 100;
       nextJob.status = 'completed';
-      nextJob.outputFile = outputFile;
+      nextJob.outputFile = nextJob.saveMode === 'media'
+        ? await moveToMediaDirectory(nextJob.jobId, outputFile, outputFile.split(/[\\/]/).pop())
+        : outputFile;
+      if (nextJob.saveMode === 'media') await removeJobFiles(nextJob.jobId);
       nextJob.filename = outputFile.split(/[\\/]/).pop();
       addLog(nextJob, 'Nedlasting og behandling fullført.');
       addSystemLog('INFO', `Jobb ${nextJob.jobNumber} fullført`);
       console.log(`[INFO] Job completed ${nextJob.jobId}`);
     })
     .catch(async (error) => {
+      if (nextJob.cancelRequested) {
+        await removeJobFiles(nextJob.jobId);
+        addSystemLog('INFO', `Jobb ${nextJob.jobNumber} avbrutt`);
+        return;
+      }
       nextJob.status = 'failed';
       nextJob.error = error.message;
       addLog(nextJob, `FEIL: ${error.message}`);
@@ -110,4 +144,4 @@ function shutdownJobs() {
   }
 }
 
-module.exports = { createJob, getJob, getJobLogs, getJobRecord, shutdownJobs };
+module.exports = { cancelJob, createJob, getJob, getJobLogs, getJobRecord, shutdownJobs };

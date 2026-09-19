@@ -63,9 +63,7 @@
                 <input id="search-query" type="search" placeholder="artist, video eller spilleliste..." autocomplete="off" />
                 <select id="search-source" aria-label="Søkekilde">
                   <option value="youtube">YouTube</option>
-                  <option value="youtube-music">YouTube Music</option>
                   <option value="soundcloud">SoundCloud</option>
-                  <option value="spotify">Spotify</option>
                 </select>
                 <button class="search-button" id="search-button" type="button">SØK</button>
               </div>
@@ -121,9 +119,13 @@
               <p id="media-meta">Henter informasjon...</p>
             </div>
           </div>
+          <div class="playlist-items" id="playlist-items" hidden></div>
           <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
           <p class="progress-detail" id="progress-detail">Venter på lokal demo-worker...</p>
-          <button class="download-button" id="download-button" type="button" hidden>LAST NED FIL <span aria-hidden="true">↓</span></button>
+          <div class="progress-actions">
+            <button class="cancel-button" id="cancel-button" type="button" hidden>AVBRYT JOBB</button>
+            <button class="download-button" id="download-button" type="button" hidden>LAST NED FIL <span aria-hidden="true">↓</span></button>
+          </div>
         </section>
       </main>
 

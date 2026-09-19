@@ -24,8 +24,8 @@ function buildCommand({ url, format, quality, jobDirectory }) {
     };
   }
 
-  const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s-%(id)s.%(ext)s');
-  const args = ['--yes-playlist', '--newline', '--restrict-filenames', '--max-filesize', '500M', '--output', outputTemplate];
+  const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s.%(ext)s');
+  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', 'node', '--embed-metadata', '--embed-thumbnail', '--output', outputTemplate];
   if (['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
     const audioFormat = format === 'ogg' ? 'vorbis' : format;
     args.push('--extract-audio', '--audio-format', audioFormat, '--audio-quality', `${quality}K`);
@@ -39,15 +39,15 @@ function buildCommand({ url, format, quality, jobDirectory }) {
 function buildInspectCommand(url) {
   return {
     command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
-    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', url]
+    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', '--js-runtimes', 'node', url]
   };
 }
 
 function buildSearchCommand(source, query) {
-  const prefix = source === 'soundcloud' ? 'scsearch5' : source === 'youtube-music' ? 'ytmsearch5' : 'ytsearch5';
+  const prefix = source === 'soundcloud' ? 'scsearch5' : 'ytsearch5';
   return {
     command: process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
-    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', `${prefix}:${query}`]
+    args: ['--flat-playlist', '--dump-single-json', '--no-warnings', '--js-runtimes', 'node', `${prefix}:${query}`]
   };
 }
 
@@ -103,8 +103,8 @@ async function searchMedia(source, query) {
         resolve((result.entries || []).filter((entry) => entry && entry.url).map((entry) => ({
           id: entry.id || entry.url,
           title: entry.title || 'Uten tittel',
-          url: entry.webpage_url || entry.url,
-          thumbnail: entry.thumbnail || null,
+          url: entry.webpage_url || (source === 'youtube' && entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : entry.url),
+          thumbnail: entry.thumbnail || (source === 'youtube' && entry.id ? `https://i.ytimg.com/vi/${entry.id}/hqdefault.jpg` : null),
           duration: entry.duration || 0,
           uploader: entry.uploader || entry.channel || source
         })));
@@ -125,6 +125,7 @@ function formatMetadata(metadata) {
     itemCount: items.length || 1,
     duration: items.reduce((total, entry) => total + (Number(entry.duration) || 0), 0),
     estimatedSize: items.reduce((total, entry) => total + (Number(entry.filesize_approx) || 0), 0),
+    items: items.map((entry, index) => ({ index: Number(entry.playlist_index) || index + 1, title: entry.title || 'Uten tittel', thumbnail: entry.thumbnail || null })),
     isPlaylist: items.length > 1 || Boolean(metadata.playlist_count && metadata.playlist_count > 1)
   };
 }
@@ -181,9 +182,8 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, url, format, quality, saveMode, onProgress, onMetadata, onLog }) {
-  const rootDirectory = saveMode === 'media' ? mediaDirectory : downloadsDirectory;
-  const jobDirectory = path.join(rootDirectory, jobId);
+async function runDownload({ jobId, url, format, quality, saveMode, onProgress, onMetadata, onLog, onItemProgress, onProcess }) {
+  const jobDirectory = path.join(downloadsDirectory, jobId);
   await fs.mkdir(jobDirectory, { recursive: true });
   const metadata = isSpotifyUrl(url)
     ? { title: 'Spotify-jobb', thumbnail: null, itemCount: 1, duration: 0, estimatedSize: 0, isPlaylist: false }
@@ -195,8 +195,10 @@ async function runDownload({ jobId, url, format, quality, saveMode, onProgress, 
 
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    onProcess(child);
     let stderr = '';
     let settled = false;
+    let currentItem = null;
     const timeout = setTimeout(() => {
       child.kill('SIGTERM');
       finish(new Error('Jobben tok for lang tid.'));
@@ -211,8 +213,14 @@ async function runDownload({ jobId, url, format, quality, saveMode, onProgress, 
 
     child.stdout.on('data', (chunk) => {
       for (const line of chunk.toString().split(/\r?\n/)) {
+        const itemMatch = line.match(/Downloading item (\d+) of (\d+)/i);
+        if (itemMatch) {
+          currentItem = Number(itemMatch[1]);
+          onItemProgress(currentItem, 0, Number(itemMatch[2]));
+        }
         const progress = parseProgress(line);
         if (progress !== null) onProgress(progress);
+        if (progress !== null && currentItem) onItemProgress(currentItem, progress, null);
       }
     });
     child.stderr.on('data', (chunk) => {
@@ -236,8 +244,26 @@ async function runDownload({ jobId, url, format, quality, saveMode, onProgress, 
   });
 }
 
-async function removeJobFiles(jobId, saveMode = 'temporary') {
-  if (saveMode === 'media') return;
+async function moveToMediaDirectory(jobId, outputFile, filename) {
+  await fs.mkdir(mediaDirectory, { recursive: true });
+  const extension = path.extname(filename);
+  const basename = path.basename(filename, extension);
+  let target = path.join(mediaDirectory, filename);
+  let duplicate = 1;
+  while (true) {
+    try {
+      await fs.access(target);
+      target = path.join(mediaDirectory, `${basename} (${duplicate})${extension}`);
+      duplicate += 1;
+    } catch {
+      break;
+    }
+  }
+  await fs.rename(outputFile, target);
+  return target;
+}
+
+async function removeJobFiles(jobId) {
   await fs.rm(path.join(downloadsDirectory, jobId), { recursive: true, force: true });
 }
 
@@ -257,4 +283,4 @@ async function cleanupDownloads() {
   }
 }
 
-module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, removeJobFiles, runDownload, searchMedia };
+module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, mediaDirectory, moveToMediaDirectory, removeJobFiles, runDownload, searchMedia };

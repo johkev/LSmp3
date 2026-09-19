@@ -99,6 +99,10 @@ Mulige statuser er `queued`, `processing`, `completed`, `failed` og `expired`.
 
 YouTube-spillelister kan behandles som flere filer. Statuspanelet viser tilgjengelig tittel, thumbnail, antall elementer, samlet varighet og estimert størrelse. Når en jobb inneholder flere filer, pakkes resultatet automatisk som én ZIP-fil før nedlasting.
 
+Søkefeltet tilbyr YouTube og SoundCloud. Spotify og YouTube Music er ikke søkekilder, men Spotify-lenker kan fortsatt limes inn direkte og behandles av spotDL. YouTube-resultater får en direkte `watch`-URL og fallback-thumbnail når søket bare returnerer en video-ID.
+
+Playlist-status oppdateres per element mens yt-dlp rapporterer hvilket element som lastes ned. Ferdige filer som velger serverlagring flyttes direkte til `MEDIA_DIR`; jobb-ID-mapper brukes bare midlertidig under behandling.
+
 Lagringsmålet kan velges som midlertidig eller serverbibliotek. `temporary` bruker `downloads/` og slettes etter nedlasting. `media` bruker `MEDIA_DIR`, som standard `/mnt/media2/Lænsmann Studio`, og blir liggende der.
 
 Et lite **status**-punkt nederst på siden åpner jobbloggen for feilsøking. API-et er `GET /api/jobs/:id/logs`.

@@ -20,6 +20,7 @@ const progressValue = document.querySelector('#progress-value');
 const progressTitle = document.querySelector('#progress-title');
 const progressDetail = document.querySelector('#progress-detail');
 const downloadButton = document.querySelector('#download-button');
+const cancelButton = document.querySelector('#cancel-button');
 const mediaSummary = document.querySelector('#media-summary');
 const mediaThumbnail = document.querySelector('#media-thumbnail');
 const mediaTitle = document.querySelector('#media-title');
@@ -30,6 +31,7 @@ const logsClose = document.querySelector('#logs-close');
 const logsContent = document.querySelector('#logs-content');
 const logsStatus = document.querySelector('#logs-status');
 const jobNumberElement = document.querySelector('#job-number');
+const playlistItems = document.querySelector('#playlist-items');
 const kevinTrigger = document.querySelector('#kevin-trigger');
 const kevinModal = document.querySelector('#kevin-modal');
 const kevinModalClose = document.querySelector('#kevin-modal-close');
@@ -159,6 +161,30 @@ async function performSearch() {
   }
 }
 
+function renderPlaylistItems(items) {
+  playlistItems.replaceChildren();
+  playlistItems.hidden = items.length === 0;
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'playlist-item';
+    row.dataset.index = item.index;
+    row.innerHTML = '<span class="playlist-item-state">○</span><span class="playlist-item-title"></span><span class="playlist-item-progress">0%</span>';
+    row.querySelector('.playlist-item-title').textContent = item.title || 'Uten tittel';
+    playlistItems.append(row);
+  }
+}
+
+function updatePlaylistItems(items) {
+  for (const item of items || []) {
+    const row = playlistItems.querySelector(`[data-index="${item.index}"]`);
+    if (!row) continue;
+    row.querySelector('.playlist-item-progress').textContent = `${item.progress || 0}%`;
+    row.querySelector('.playlist-item-state').textContent = item.status === 'completed' ? '✓' : item.status === 'processing' ? '●' : item.status === 'failed' ? '!' : '○';
+    row.classList.toggle('is-complete', item.status === 'completed');
+    row.classList.toggle('is-failed', item.status === 'failed');
+  }
+}
+
 async function readJsonResponse(response, fallbackMessage) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -173,8 +199,11 @@ function resetProgress() {
   currentJobId = null;
   progressPanel.hidden = true;
   downloadButton.hidden = true;
+  cancelButton.hidden = true;
   mediaSummary.hidden = true;
   mediaThumbnail.removeAttribute('src');
+  playlistItems.replaceChildren();
+  playlistItems.hidden = true;
   setProgress(0, 'Klargjører filen', 'Venter på serveren...');
 }
 
@@ -201,6 +230,7 @@ function showMetadata(metadata) {
     mediaThumbnail.src = metadata.thumbnail;
     mediaThumbnail.alt = `Forhåndsvisning av ${metadata.title || 'mediet'}`;
   }
+  renderPlaylistItems(metadata.items || []);
 }
 
 async function pollJob(jobId) {
@@ -215,13 +245,23 @@ async function pollJob(jobId) {
 
     const detail = job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.';
     showMetadata(job.metadata);
+    updatePlaylistItems(job.items);
     setProgress(job.progress, job.status === 'completed' ? 'Filen er klar' : 'Behandler filen', detail);
 
     if (job.status === 'completed') {
+      cancelButton.hidden = true;
       downloadButton.hidden = false;
       downloadButton.firstChild.textContent = `LAST NED ${videoFormats.includes(job.format) ? 'VIDEO' : job.format.toUpperCase()} `;
       return;
     }
+
+    if (job.status === 'cancelled') {
+      cancelButton.hidden = true;
+      setProgress(job.progress, 'Jobben er avbrutt', 'Nedlastingen ble stoppet.');
+      return;
+    }
+
+    cancelButton.hidden = false;
 
     pollTimer = window.setTimeout(() => pollJob(jobId), 700);
   } catch (error) {
@@ -278,6 +318,30 @@ form.addEventListener('submit', async (event) => {
 downloadButton.addEventListener('click', () => {
   if (currentJobId) window.location.href = `/api/jobs/${currentJobId}/download`;
 });
+
+async function cancelCurrentJob() {
+  if (!currentJobId) return;
+  cancelButton.disabled = true;
+  try {
+    await fetch(`/api/jobs/${currentJobId}`, { method: 'DELETE', keepalive: true });
+    cancelButton.hidden = true;
+    setProgress(progressValue.textContent.replace('%', ''), 'Jobben er avbrutt', 'Nedlastingen ble stoppet.');
+  } finally {
+    cancelButton.disabled = false;
+  }
+}
+
+cancelButton.addEventListener('click', cancelCurrentJob);
+
+function cancelWhenLeavingPage() {
+  if (!currentJobId || cancelButton.hidden) return;
+  fetch(`/api/jobs/${currentJobId}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') cancelWhenLeavingPage();
+});
+window.addEventListener('pagehide', cancelWhenLeavingPage);
 
 diagnosticsButton.addEventListener('click', async () => {
   logsPanel.hidden = false;

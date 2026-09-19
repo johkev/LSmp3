@@ -1,6 +1,6 @@
 const path = require('node:path');
 const express = require('express');
-const { createJob, getJob, getJobLogs, getJobRecord, shutdownJobs } = require('./job-store');
+const { cancelJob, createJob, getJob, getJobLogs, getJobRecord, shutdownJobs } = require('./job-store');
 const { cleanupDownloads, removeJobFiles, searchMedia } = require('./media-downloader');
 const { addSystemLog, getSystemLogs } = require('./log-store');
 
@@ -26,7 +26,7 @@ app.get('/api/search', async (request, response) => {
   if (query.length < 2 || query.length > 200) {
     return response.status(400).json({ error: 'Søket må være mellom 2 og 200 tegn.' });
   }
-  if (!['youtube', 'youtube-music', 'soundcloud', 'spotify'].includes(source)) {
+  if (!['youtube', 'soundcloud'].includes(source)) {
     return response.status(400).json({ error: 'Søkekilden støttes ikke.' });
   }
   try {
@@ -94,6 +94,12 @@ app.get('/api/jobs/:id/logs', (request, response) => {
   const logs = getJobLogs(request.params.id);
   if (!logs) return response.status(404).json({ error: 'Jobben finnes ikke.' });
   return response.json({ jobId: request.params.id, logs: [...getSystemLogs(), ...logs] });
+});
+
+app.delete('/api/jobs/:id', (request, response) => {
+  const job = cancelJob(request.params.id);
+  if (!job) return response.status(404).json({ error: 'Jobben finnes ikke.' });
+  return response.json({ jobId: job.jobId, status: job.status });
 });
 
 app.get('/api/jobs/:id/download', (request, response) => {
