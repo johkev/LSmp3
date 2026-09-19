@@ -1,4 +1,4 @@
-name: Deploy to Debian server
+name: Test main branch
 
 on:
   push:
@@ -6,12 +6,8 @@ on:
       - main
   workflow_dispatch:
 
-concurrency:
-  group: production-deploy
-  cancel-in-progress: true
-
 jobs:
-  test-and-deploy:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -30,31 +26,3 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Load SSH key
-        uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
-
-      - name: Trust deployment server
-        env:
-          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Deploy and restart service
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-        run: |
-          ssh "$SERVER_USER@$SERVER_HOST" <<'REMOTE'
-            set -eu
-            cd /home/kevin/laensmann-mp3
-            git fetch origin main
-            git reset --hard origin/main
-            npm ci --omit=dev
-            sudo systemctl restart mp3-api.service
-            sudo systemctl is-active --quiet mp3-api.service
-            curl --fail --silent http://127.0.0.1:3002/api/health > /dev/null
-          REMOTE

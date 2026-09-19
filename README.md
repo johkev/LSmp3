@@ -101,23 +101,16 @@ Det er ingen brukerbasert rate limit eller kvote. Brukeren kan starte så mange 
 
 Serveren beholder tekniske grenser for stabilitet: maksimalt to samtidige workers, maksimal filstørrelse på 500 MB og timeout på 10 minutter per jobb. Disse hindrer én feil eller ekstrem jobb fra å stoppe hele serveren, men begrenser ikke hvor mange jobber brukeren kan kjøre totalt.
 
-## Automatisk deployment
+## Automatisk deployment uten SSH
 
-Workflowen [.github/workflows/deploy.yml](.github/workflows/deploy.yml) kjører tester på hver push til `main`. Hvis testene passerer, kobler GitHub Actions seg til Debian-serveren med SSH, henter siste commit, kjører `npm ci`, restarter `mp3-api.service` og sjekker health-endepunktet.
+Workflowen [.github/workflows/deploy.yml](.github/workflows/deploy.yml) kjører tester på hver push til `main`. Debian-serveren henter selv nye commits fra GitHub hvert femte minutt via utgående HTTPS. Dette krever ingen åpen SSH-port hjemme.
 
-### GitHub Secrets
+Serverfilene ligger i `deploy/`:
 
-Opprett disse secrets under **Settings → Secrets and variables → Actions**:
+- `pull-and-restart.sh` - henter `origin/main`, installerer dependencies og restarter API-et
+- `mp3-pull.service` - systemd-jobben som gjør én oppdatering
+- `mp3-pull.timer` - kjører oppdateringen hvert femte minutt
 
-- `SERVER_HOST` - offentlig IP eller hostname til Debian-serveren
-- `SERVER_USER` - `kevin`
-- `SERVER_SSH_KEY` - privat SSH-nøkkel for deployment
-- `SERVER_KNOWN_HOSTS` - resultatet fra `ssh-keyscan` for serveren
+Serveren må fortsatt ha den begrensede sudo-regelen for `mp3-api.service`. `.env` blir liggende lokalt fordi den er ignorert av Git.
 
-Private key og `.env` skal aldri legges i repositoryet.
-
-### Serverforberedelse
-
-Deploy-brukeren må kunne restarte akkurat denne tjenesten uten passord. Dette konfigureres senere med en begrenset sudo-regel for `systemctl restart mp3-api.service` og `systemctl is-active mp3-api.service`. Ikke bruk full `NOPASSWD: ALL`.
-
-Når secrets og serverregelen er klare, tester du deployment med en vanlig push til `main`. Backend skal ikke eksponeres direkte mot internett.
+Etter at timeren er aktivert, trenger du bare å pushe til `main`. Serveren oppdaterer seg selv automatisk. Backend skal ikke eksponeres direkte mot internett.

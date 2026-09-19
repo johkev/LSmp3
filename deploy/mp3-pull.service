@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Lænsmann MP3 from GitHub
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=kevin
+WorkingDirectory=/home/kevin/laensmann-mp3
+ExecStart=/bin/sh /home/kevin/laensmann-mp3/deploy/pull-and-restart.sh
