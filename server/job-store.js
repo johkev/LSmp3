@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
-const { moveToMediaDirectory, removeJobFiles, runDownload } = require('./media-downloader');
+const fs = require('node:fs/promises');
+const { removeJobFiles, runDownload } = require('./media-downloader');
 const { addSystemLog } = require('./log-store');
 
 const jobs = new Map();
@@ -17,6 +18,7 @@ function createJob({ url, format, quality, saveMode = 'temporary' }) {
     saveMode,
     status: 'queued',
     progress: 0,
+    phase: 'Venter i kø',
     metadata: null,
     items: [],
     createdAt: new Date().toISOString(),
@@ -55,6 +57,7 @@ function publicJob(job) {
     jobNumber: job.jobNumber,
     status: job.status,
     progress: job.progress,
+    phase: job.phase,
     format: job.format,
     saveMode: job.saveMode,
     ...(job.metadata ? { metadata: job.metadata } : {}),
@@ -73,6 +76,7 @@ function processQueue() {
 
   activeJobs += 1;
   nextJob.status = 'processing';
+  nextJob.phase = 'Henter metadata';
   addLog(nextJob, `Jobb startet: ${nextJob.format}, lagring=${nextJob.saveMode}`);
   addSystemLog('INFO', `Jobb ${nextJob.jobNumber} startet`);
   console.log(`[INFO] Job started ${nextJob.jobId}`);
@@ -82,6 +86,7 @@ function processQueue() {
     onProgress: (progress) => { nextJob.progress = progress; },
     onMetadata: (metadata) => {
       nextJob.metadata = metadata;
+      nextJob.phase = 'Laster ned';
       nextJob.items = (metadata.items || []).map((item) => ({ ...item, status: 'queued', progress: 0 }));
       addLog(nextJob, `Metadata mottatt: ${metadata.title}`);
     },
@@ -94,15 +99,14 @@ function processQueue() {
       nextJob.process = process;
       if (nextJob.cancelRequested) process.kill('SIGTERM');
     },
+    onDirectory: (directory) => { nextJob.directory = directory; },
     onLog: (message) => addLog(nextJob, message)
   })
     .then(async (outputFile) => {
       nextJob.progress = 100;
+      nextJob.phase = 'Ferdig';
       nextJob.status = 'completed';
-      nextJob.outputFile = nextJob.saveMode === 'media'
-        ? await moveToMediaDirectory(nextJob.jobId, outputFile, outputFile.split(/[\\/]/).pop())
-        : outputFile;
-      if (nextJob.saveMode === 'media') await removeJobFiles(nextJob.jobId);
+      nextJob.outputFile = outputFile;
       nextJob.filename = outputFile.split(/[\\/]/).pop();
       addLog(nextJob, 'Nedlasting og behandling fullført.');
       addSystemLog('INFO', `Jobb ${nextJob.jobNumber} fullført`);
@@ -110,15 +114,18 @@ function processQueue() {
     })
     .catch(async (error) => {
       if (nextJob.cancelRequested) {
-        await removeJobFiles(nextJob.jobId);
+        if (nextJob.directory) await fs.rm(nextJob.directory, { recursive: true, force: true });
+        else await removeJobFiles(nextJob.jobId);
         addSystemLog('INFO', `Jobb ${nextJob.jobNumber} avbrutt`);
         return;
       }
       nextJob.status = 'failed';
+      nextJob.phase = 'Feilet';
       nextJob.error = error.message;
       addLog(nextJob, `FEIL: ${error.message}`);
       addSystemLog('ERROR', `Jobb ${nextJob.jobNumber}: ${error.message}`);
-      await removeJobFiles(nextJob.jobId, nextJob.saveMode);
+      if (nextJob.directory) await fs.rm(nextJob.directory, { recursive: true, force: true });
+      else await removeJobFiles(nextJob.jobId);
       console.error(`[ERROR] Job failed ${nextJob.jobId}: ${error.message}`);
     })
     .finally(() => {
@@ -140,7 +147,11 @@ function getJobLogs(jobId) {
 
 function shutdownJobs() {
   for (const job of jobs.values()) {
-    if (job.status === 'processing') removeJobFiles(job.jobId, job.saveMode);
+    if (job.status === 'processing') {
+      if (job.process) job.process.kill('SIGTERM');
+      if (job.directory) fs.rm(job.directory, { recursive: true, force: true });
+      else removeJobFiles(job.jobId);
+    }
   }
 }
 

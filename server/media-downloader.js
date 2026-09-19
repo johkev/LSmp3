@@ -182,9 +182,12 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, url, format, quality, saveMode, onProgress, onMetadata, onLog, onItemProgress, onProcess }) {
-  const jobDirectory = path.join(downloadsDirectory, jobId);
+async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, onProgress, onMetadata, onLog, onItemProgress, onProcess, onDirectory }) {
+  const jobDirectory = saveMode === 'media'
+    ? path.join(mediaDirectory, `jobb${jobNumber}`)
+    : path.join(downloadsDirectory, jobId);
   await fs.mkdir(jobDirectory, { recursive: true });
+  onDirectory(jobDirectory);
   const metadata = isSpotifyUrl(url)
     ? { title: 'Spotify-jobb', thumbnail: null, itemCount: 1, duration: 0, estimatedSize: 0, isPlaylist: false }
     : await inspectMedia(url);
@@ -219,7 +222,7 @@ async function runDownload({ jobId, url, format, quality, saveMode, onProgress, 
           onItemProgress(currentItem, 0, Number(itemMatch[2]));
         }
         const progress = parseProgress(line);
-        if (progress !== null) onProgress(progress);
+        if (progress !== null) onProgress(Math.min(progress, 95));
         if (progress !== null && currentItem) onItemProgress(currentItem, progress, null);
       }
     });
@@ -244,25 +247,6 @@ async function runDownload({ jobId, url, format, quality, saveMode, onProgress, 
   });
 }
 
-async function moveToMediaDirectory(jobId, outputFile, filename) {
-  await fs.mkdir(mediaDirectory, { recursive: true });
-  const extension = path.extname(filename);
-  const basename = path.basename(filename, extension);
-  let target = path.join(mediaDirectory, filename);
-  let duplicate = 1;
-  while (true) {
-    try {
-      await fs.access(target);
-      target = path.join(mediaDirectory, `${basename} (${duplicate})${extension}`);
-      duplicate += 1;
-    } catch {
-      break;
-    }
-  }
-  await fs.rename(outputFile, target);
-  return target;
-}
-
 async function removeJobFiles(jobId) {
   await fs.rm(path.join(downloadsDirectory, jobId), { recursive: true, force: true });
 }
@@ -283,4 +267,4 @@ async function cleanupDownloads() {
   }
 }
 
-module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, mediaDirectory, moveToMediaDirectory, removeJobFiles, runDownload, searchMedia };
+module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, mediaDirectory, removeJobFiles, runDownload, searchMedia };

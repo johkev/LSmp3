@@ -243,7 +243,7 @@ async function pollJob(jobId) {
       throw new Error(job.error || 'Serveren klarte ikke å behandle filen.');
     }
 
-    const detail = job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.';
+    const detail = job.phase || (job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.');
     showMetadata(job.metadata);
     updatePlaylistItems(job.items);
     setProgress(job.progress, job.status === 'completed' ? 'Filen er klar' : 'Behandler filen', detail);
@@ -263,7 +263,7 @@ async function pollJob(jobId) {
 
     cancelButton.hidden = false;
 
-    pollTimer = window.setTimeout(() => pollJob(jobId), 700);
+    pollTimer = window.setTimeout(() => pollJob(jobId), 400);
   } catch (error) {
     progressTitle.textContent = 'Jobben feilet';
     progressDetail.textContent = error.message;
