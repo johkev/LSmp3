@@ -97,6 +97,10 @@ Mulige statuser er `queued`, `processing`, `completed`, `failed` og `expired`.
 `format` kan være `mp3` eller `mp4`. MP3 bruker valgt bitrate. MP4 bruker valgt oppløsning (`1080`, `720`, `480` eller `360`). Ferdige filer lastes ned fra `/api/jobs/:id/download` og slettes etter vellykket sending.
 `format` kan være `mp3`, `m4a`, `flac`, `ogg`, `opus`, `wav`, `mp4`, `mkv` eller `webm`. Lyd bruker bitrate (`96` til `320 kbps`), og video bruker oppløsning (`360p` til `2160p / 4K`). Spotify støtter lydformatene som spotDL dokumenterer: MP3, FLAC, OGG/OPUS, M4A og WAV. Ferdige filer lastes ned fra `/api/jobs/:id/download`.
 
+Arbeidsmodus kan velges per jobb. `Informasjonsmodus` henter metadata og thumbnail før nedlasting og bygger inn metadata i resultatet. `Rask modus` starter yt-dlp direkte og hopper over forhåndsmetadata og embedding for kortere oppstartstid.
+
+Yt-dlp bruker `YTDLP_CONCURRENT_FRAGMENTS` fragmenter samtidig. FFmpeg bruker `FFMPEG_THREADS`; `0` betyr automatisk CPU-bruk. Disse kan justeres i `.env`, men for mange samtidige jobber og for mange tråder kan gjøre serveren tregere totalt.
+
 YouTube-spillelister kan behandles som flere filer. Statuspanelet viser tilgjengelig tittel, thumbnail, antall elementer, samlet varighet og estimert størrelse. Når en jobb inneholder flere filer, pakkes resultatet automatisk som én ZIP-fil før nedlasting.
 
 Søkefeltet tilbyr YouTube og SoundCloud. Spotify og YouTube Music er ikke søkekilder, men Spotify-lenker kan fortsatt limes inn direkte og behandles av spotDL. YouTube-resultater får en direkte `watch`-URL og fallback-thumbnail når søket bare returnerer en video-ID.

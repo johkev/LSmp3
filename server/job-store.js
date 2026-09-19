@@ -8,7 +8,7 @@ const maxConcurrentJobs = Number(process.env.MAX_CONCURRENT_JOBS) || 5;
 let activeJobs = 0;
 let nextJobNumber = 1;
 
-function createJob({ url, format, quality, saveMode = 'temporary' }) {
+function createJob({ url, format, quality, saveMode = 'temporary', speedMode = 'info' }) {
   const job = {
     jobId: randomUUID(),
     jobNumber: nextJobNumber++,
@@ -16,6 +16,7 @@ function createJob({ url, format, quality, saveMode = 'temporary' }) {
     format,
     quality,
     saveMode,
+    speedMode,
     status: 'queued',
     progress: 0,
     phase: 'Venter i kø',
@@ -59,6 +60,7 @@ function publicJob(job) {
     progress: job.progress,
     phase: job.phase,
     format: job.format,
+    speedMode: job.speedMode,
     saveMode: job.saveMode,
     ...(job.metadata ? { metadata: job.metadata } : {}),
     ...(job.items.length ? { items: job.items } : {}),

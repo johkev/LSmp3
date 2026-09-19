@@ -7,14 +7,17 @@ const { Archiver } = require('archiver');
 const downloadsDirectory = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, '..', 'downloads'));
 const mediaDirectory = path.resolve(process.env.MEDIA_DIR || '/mnt/media2/Lænsmann Studio');
 const jobTimeout = Number(process.env.JOB_TIMEOUT) || 600000;
-const jsRuntime = process.env.JS_RUNTIME || 'node';
+const ffmpegThreads = Number(process.env.FFMPEG_THREADS) || 0;
+const concurrentFragments = Number(process.env.YTDLP_CONCURRENT_FRAGMENTS) || 8;
+const defaultDeno = '/home/kevin/.config/spotdl/deno';
+const jsRuntime = process.env.JS_RUNTIME || (process.platform === 'linux' && require('node:fs').existsSync(defaultDeno) ? `deno:${defaultDeno}` : 'node');
 
 function isSpotifyUrl(url) {
   const hostname = new URL(url).hostname.toLowerCase();
   return hostname === 'spotify.com' || hostname.endsWith('.spotify.com');
 }
 
-function buildCommand({ url, format, quality, jobDirectory }) {
+function buildCommand({ url, format, quality, jobDirectory, speedMode }) {
   if (isSpotifyUrl(url)) {
     if (!['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
       throw new Error('Spotify støtter bare lydformatene MP3, M4A, FLAC, OGG, OPUS og WAV.');
@@ -26,7 +29,10 @@ function buildCommand({ url, format, quality, jobDirectory }) {
   }
 
   const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s.%(ext)s');
-  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', jsRuntime, '--concurrent-fragments', '8', '--retries', '5', '--fragment-retries', '5', '--embed-metadata', '--embed-thumbnail', '--output', outputTemplate];
+  const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', jsRuntime, '--concurrent-fragments', String(concurrentFragments), '--retries', '5', '--fragment-retries', '5'];
+  args.push('--postprocessor-args', `FFmpeg:-threads ${ffmpegThreads}`);
+  if (speedMode !== 'fast') args.push('--embed-metadata', '--embed-thumbnail');
+  args.push('--output', outputTemplate);
   if (['mp3', 'm4a', 'flac', 'ogg', 'opus', 'wav'].includes(format)) {
     const audioFormat = format === 'ogg' ? 'vorbis' : format;
     args.push('--extract-audio', '--audio-format', audioFormat, '--audio-quality', `${quality}K`);
@@ -183,17 +189,18 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, onProgress, onMetadata, onLog, onItemProgress, onProcess, onDirectory }) {
+async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onMetadata, onLog, onItemProgress, onProcess, onDirectory }) {
   const jobDirectory = saveMode === 'media'
     ? path.join(mediaDirectory, `jobb${jobNumber}`)
     : path.join(downloadsDirectory, jobId);
   await fs.mkdir(jobDirectory, { recursive: true });
   onDirectory(jobDirectory);
-  const metadata = isSpotifyUrl(url)
+  const metadata = speedMode === 'fast' ? { title: 'Rask nedlasting', thumbnail: null, itemCount: 1, duration: 0, estimatedSize: 0, items: [], isPlaylist: false }
+    : isSpotifyUrl(url)
     ? { title: 'Spotify-jobb', thumbnail: null, itemCount: 1, duration: 0, estimatedSize: 0, isPlaylist: false }
     : await inspectMedia(url);
   onMetadata(metadata);
-  const { command, args } = buildCommand({ url, format, quality, jobDirectory });
+  const { command, args } = buildCommand({ url, format, quality, jobDirectory, speedMode });
   onLog(`Starter ${command} (${format})`);
   console.log(`[INFO] Starter ${command} for jobb ${jobId}`);
 

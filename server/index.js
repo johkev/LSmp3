@@ -50,7 +50,7 @@ app.get('/api/logs', (request, response) => {
 });
 
 app.post('/api/jobs', (request, response) => {
-  const { url, format = 'mp3', quality = '320', saveMode = 'temporary' } = request.body || {};
+  const { url, format = 'mp3', quality = '320', saveMode = 'temporary', speedMode = 'info' } = request.body || {};
 
   let parsedUrl;
   try {
@@ -83,9 +83,12 @@ app.post('/api/jobs', (request, response) => {
   if (!['temporary', 'media'].includes(saveMode)) {
     return response.status(400).json({ error: 'Lagringsmålet støttes ikke.' });
   }
+  if (!['fast', 'info'].includes(speedMode)) {
+    return response.status(400).json({ error: 'Nedlastingsmodusen støttes ikke.' });
+  }
 
   const normalizedUrl = normalizeMediaUrl(parsedUrl.toString());
-  const job = createJob({ url: normalizedUrl, format, quality: String(quality), saveMode });
+  const job = createJob({ url: normalizedUrl, format, quality: String(quality), saveMode, speedMode });
   addSystemLog('INFO', `Jobb ${job.jobNumber} opprettet`);
   return response.status(202).json(job);
 });

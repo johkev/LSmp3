@@ -6,6 +6,7 @@ const formMessage = document.querySelector('#form-message');
 const formatInput = document.querySelector('#format');
 const qualityInput = document.querySelector('#quality');
 const saveModeInput = document.querySelector('#save-mode');
+const speedModeInput = document.querySelector('#speed-mode');
 const urlMode = document.querySelector('#url-mode');
 const searchMode = document.querySelector('#search-mode');
 const urlEntry = document.querySelector('#url-entry');
@@ -302,7 +303,7 @@ form.addEventListener('submit', async (event) => {
     const response = await fetch('/api/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, format: formatInput.value, quality: qualityInput.value, saveMode: saveModeInput.checked ? 'media' : 'temporary' })
+      body: JSON.stringify({ url, format: formatInput.value, quality: qualityInput.value, saveMode: saveModeInput.checked ? 'media' : 'temporary', speedMode: speedModeInput.checked ? 'info' : 'fast' })
     });
     const job = await readJsonResponse(response, 'Serveren returnerte ikke JSON. Sjekk at Apache peker på riktig backend.');
     if (!response.ok) throw new Error(job.error || 'Kunne ikke starte jobben.');
