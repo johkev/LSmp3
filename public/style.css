@@ -132,6 +132,11 @@ select { cursor: pointer; font-size: 1rem; }
 .progress-panel { margin-top: 18px; border-color: rgba(63, 194, 163, .35); }
 .progress-panel[hidden] { display: none; }
 .progress-value { color: #16735b; font-family: "DM Mono", monospace; font-size: 13px; font-weight: 500; }
+.media-summary { display: grid; grid-template-columns: 132px 1fr; gap: 16px; align-items: center; margin-bottom: 24px; padding: 12px; border: 1px solid var(--border-light); border-radius: var(--radius-md); background: rgba(255, 255, 255, .38); }
+.media-summary[hidden] { display: none; }
+.media-summary img { width: 132px; height: 82px; object-fit: cover; border-radius: var(--radius-sm); background: var(--surface-2); }
+.media-summary-copy h3 { margin: 0 0 7px; overflow: hidden; font-family: "Sora", sans-serif; font-size: 1rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.media-summary-copy p { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
 .progress-track { height: 9px; overflow: hidden; border-radius: 999px; background: #d7e4df; }
 .progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), #7fdbc7); transition: width .35s ease; }
 .progress-detail { margin: 14px 0 22px; color: var(--muted); font-size: .88rem; }
@@ -152,6 +157,9 @@ select { cursor: pointer; font-size: 1rem; }
   .job-number { display: none; }
   .options-grid { gap: 8px; }
   .select-field { padding: 10px; }
+  .media-summary { grid-template-columns: 92px 1fr; gap: 12px; }
+  .media-summary img { width: 92px; height: 68px; }
+  .media-summary-copy h3 { font-size: .9rem; }
   .footer { flex-direction: column; line-height: 1.6; }
 }
 

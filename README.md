@@ -93,6 +93,8 @@ Mulige statuser er `queued`, `processing`, `completed`, `failed` og `expired`.
 
 `format` kan være `mp3` eller `mp4`. MP3 bruker valgt bitrate. MP4 bruker valgt oppløsning (`1080`, `720`, `480` eller `360`). Ferdige filer lastes ned fra `/api/jobs/:id/download` og slettes etter vellykket sending.
 
+YouTube-spillelister kan behandles som flere filer. Statuspanelet viser tilgjengelig tittel, thumbnail, antall elementer, samlet varighet og estimert størrelse. Når en jobb inneholder flere filer, pakkes resultatet automatisk som én ZIP-fil før nedlasting.
+
 Kopier `.env.example` til `.env` hvis du trenger andre lokale innstillinger. `.env` skal ikke committes.
 
 ## Cleanup og sikkerhet
@@ -101,16 +103,6 @@ Det er ingen brukerbasert rate limit eller kvote. Brukeren kan starte så mange 
 
 Serveren beholder tekniske grenser for stabilitet: maksimalt to samtidige workers, maksimal filstørrelse på 500 MB og timeout på 10 minutter per jobb. Disse hindrer én feil eller ekstrem jobb fra å stoppe hele serveren, men begrenser ikke hvor mange jobber brukeren kan kjøre totalt.
 
-## Automatisk deployment uten SSH
+## Neste fase
 
-Workflowen [.github/workflows/deploy.yml](.github/workflows/deploy.yml) kjører tester på hver push til `main`. Debian-serveren henter selv nye commits fra GitHub hvert femte minutt via utgående HTTPS. Dette krever ingen åpen SSH-port hjemme.
-
-Serverfilene ligger i `deploy/`:
-
-- `pull-and-restart.sh` - henter `origin/main`, installerer dependencies og restarter API-et
-- `mp3-pull.service` - systemd-jobben som gjør én oppdatering
-- `mp3-pull.timer` - kjører oppdateringen hvert femte minutt
-
-Serveren må fortsatt ha den begrensede sudo-regelen for `mp3-api.service`. `.env` blir liggende lokalt fordi den er ignorert av Git.
-
-Etter at timeren er aktivert, trenger du bare å pushe til `main`. Serveren oppdaterer seg selv automatisk. Backend skal ikke eksponeres direkte mot internett.
+Neste arbeid er testdekning og deretter Apache/systemd-deployment. Backend skal ikke eksponeres direkte mot internett.

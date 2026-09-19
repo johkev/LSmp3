@@ -11,6 +11,10 @@ const progressValue = document.querySelector('#progress-value');
 const progressTitle = document.querySelector('#progress-title');
 const progressDetail = document.querySelector('#progress-detail');
 const downloadButton = document.querySelector('#download-button');
+const mediaSummary = document.querySelector('#media-summary');
+const mediaThumbnail = document.querySelector('#media-thumbnail');
+const mediaTitle = document.querySelector('#media-title');
+const mediaMeta = document.querySelector('#media-meta');
 
 const audioQualities = [
   ['320', '320 kbps'],
@@ -58,7 +62,34 @@ function resetProgress() {
   currentJobId = null;
   progressPanel.hidden = true;
   downloadButton.hidden = true;
+  mediaSummary.hidden = true;
+  mediaThumbnail.removeAttribute('src');
   setProgress(0, 'Klargjører filen', 'Venter på serveren...');
+}
+
+function formatDuration(seconds) {
+  const totalSeconds = Math.round(Number(seconds) || 0);
+  if (!totalSeconds) return 'Ukjent lengde';
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
+}
+
+function formatSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (!size) return 'størrelse beregnes underveis';
+  return `ca. ${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function showMetadata(metadata) {
+  if (!metadata) return;
+  mediaSummary.hidden = false;
+  mediaTitle.textContent = metadata.title || 'Mediejobb';
+  mediaMeta.textContent = `${metadata.isPlaylist ? `${metadata.itemCount} elementer` : 'Enkeltvideo'} · ${formatDuration(metadata.duration)} · ${formatSize(metadata.estimatedSize)}`;
+  if (metadata.thumbnail) {
+    mediaThumbnail.src = metadata.thumbnail;
+    mediaThumbnail.alt = `Forhåndsvisning av ${metadata.title || 'mediet'}`;
+  }
 }
 
 async function pollJob(jobId) {
@@ -72,6 +103,7 @@ async function pollJob(jobId) {
     }
 
     const detail = job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.';
+    showMetadata(job.metadata);
     setProgress(job.progress, job.status === 'completed' ? 'Filen er klar' : 'Behandler filen', detail);
 
     if (job.status === 'completed') {

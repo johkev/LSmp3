@@ -13,6 +13,7 @@ function createJob({ url, format, quality }) {
     quality,
     status: 'queued',
     progress: 0,
+    metadata: null,
     createdAt: new Date().toISOString(),
     outputFile: null
   };
@@ -38,6 +39,7 @@ function publicJob(job) {
     status: job.status,
     progress: job.progress,
     format: job.format,
+    ...(job.metadata ? { metadata: job.metadata } : {}),
     ...(job.filename ? { filename: job.filename } : {}),
     ...(job.error ? { error: job.error } : {}),
     createdAt: job.createdAt
@@ -53,7 +55,11 @@ function processQueue() {
   nextJob.status = 'processing';
   console.log(`[INFO] Job started ${nextJob.jobId}`);
 
-  runDownload({ ...nextJob, onProgress: (progress) => { nextJob.progress = progress; } })
+  runDownload({
+    ...nextJob,
+    onProgress: (progress) => { nextJob.progress = progress; },
+    onMetadata: (metadata) => { nextJob.metadata = metadata; }
+  })
     .then((outputFile) => {
       nextJob.progress = 100;
       nextJob.status = 'completed';

@@ -43,7 +43,8 @@ app.post('/api/jobs', (request, response) => {
     return response.status(400).json({ error: 'Spotify støttes bare med MP3-format.' });
   }
 
-  if (!['128', '192', '256', '320'].includes(String(quality))) {
+  const validQualities = format === 'mp4' ? ['360', '480', '720', '1080'] : ['128', '192', '256', '320'];
+  if (!validQualities.includes(String(quality))) {
     return response.status(400).json({ error: 'Kvaliteten støttes ikke.' });
   }
 
