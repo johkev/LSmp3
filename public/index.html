@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Lænsmann MP3 konverterer medieinnhold du har rett til å bruke." />
+    <title>Lænsmann MP3</title>
+    <meta name="theme-color" content="#0f1513" />
+    <link rel="icon" href="favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="favicon/favicon-96x96.png" type="image/png" sizes="96x96" />
+    <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="favicon/site.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Lænsmann MP3 hjem">
+          <span class="brand-mark" aria-hidden="true"><img src="favicon/favicon.svg" alt="" /></span>
+          <span><strong>LÆNSMANN</strong><small>MP3 / MP4</small></span>
+        </a>
+        <a class="status-chip" href="https://www.lensmann.studio/">TILBAKE TIL STUDIO <span aria-hidden="true">↗</span></a>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="page-title">
+
+          <h1 id="page-title">Youtube<br /><em>Spotify</em></h1>
+         
+        </section>
+
+        <section class="converter-panel" aria-labelledby="converter-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">NY JOBB <span>02</span></p>
+              <h2 id="converter-title">Klargjør konvertering</h2>
+            </div>
+            <span class="job-number">JOB / 0001</span>
+          </div>
+
+          <form id="converter-form" novalidate>
+            <label class="field-label" for="media-url">Medieadresse</label>
+            <div class="url-field">
+              <span class="url-icon" aria-hidden="true">↗</span>
+              <input id="media-url" name="url" type="url" autocomplete="url" placeholder="https://youtube.com/..." required />
+              <button class="clear-button" id="clear-url" type="button" aria-label="Tøm medieadresse" hidden>×</button>
+            </div>
+            <p class="field-hint" id="url-hint">Støtter kompatible mediekilder og Spotify-lenker. Bruk bare innhold du har rett til å bruke.</p>
+
+            <div class="options-grid">
+              <label class="select-field">
+                <span class="field-label">Format</span>
+                <select id="format" name="format">
+                  <option value="mp3">MP3 / lyd</option>
+                  <option value="mp4">MP4 / video</option>
+                </select>
+              </label>
+              <label class="select-field">
+                <span class="field-label">Kvalitet</span>
+                <select id="quality" name="quality">
+                  <option value="320">320 kbps</option>
+                  <option value="256">256 kbps</option>
+                  <option value="192">192 kbps</option>
+                  <option value="128">128 kbps</option>
+                </select>
+              </label>
+            </div>
+
+            <button class="start-button" type="submit">
+              <span>START KONVERTERING</span><span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+            <p class="form-message" id="form-message" role="alert" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="progress-panel" id="progress-panel" aria-labelledby="progress-title" hidden>
+          <div class="progress-topline">
+            <div>
+              <p class="eyebrow">JOBBSTATUS <span>03</span></p>
+              <h2 id="progress-title">Klargjører filen</h2>
+            </div>
+            <strong class="progress-value" id="progress-value">0%</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
+          <p class="progress-detail" id="progress-detail">Venter på lokal demo-worker...</p>
+          <button class="download-button" id="download-button" type="button" hidden>LAST NED FIL <span aria-hidden="true">↓</span></button>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>© 2026 LÆNSMANN STUDIO</span>
+
+      </footer>
+    </div>
+  </body>
+</html>
