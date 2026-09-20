@@ -212,7 +212,7 @@ async function createArchiveCopy(directory, archivePath) {
   return archivePath;
 }
 
-async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onLog, onItemProgress, onItemError, onItemTitle, onPlaylistTitle, onProcess, onDirectory }) {
+async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onThumbnail, onLog, onItemProgress, onItemError, onItemTitle, onPlaylistTitle, onProcess, onDirectory }) {
   const jobDirectory = saveMode === 'media'
     ? path.join(mediaDirectory, `jobb${jobNumber}`)
     : path.join(downloadsDirectory, jobId);
@@ -258,6 +258,8 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
         if (/\bERROR\b|HTTP Error 403|not available/i.test(trimmed) && currentItem) onItemError(currentItem, trimmed);
         const playlistMatch = trimmed.match(/Downloading playlist:\s*(.+)$/i);
         if (playlistMatch) onPlaylistTitle(playlistMatch[1].trim());
+        const videoMatch = trimmed.match(/https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([\w-]+)/i);
+        if (videoMatch) onThumbnail(`https://i.ytimg.com/vi/${videoMatch[1]}/hqdefault.jpg`);
         const destinationMatch = trimmed.match(/Destination:\s*(.+)$/i);
         if (destinationMatch && currentItem) {
           const filename = path.basename(destinationMatch[1].trim());

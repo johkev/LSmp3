@@ -281,6 +281,7 @@ function formatSize(bytes) {
 function showMetadata(metadata) {
   if (!metadata) return;
   mediaSummary.hidden = false;
+  mediaMeta.hidden = false;
   mediaTitle.textContent = metadata.playlistTitle ? `Playlist: ${metadata.playlistTitle}` : metadata.title || 'Mediejobb';
   mediaMeta.textContent = `${metadata.isPlaylist ? `${metadata.itemCount} elementer` : 'Enkeltvideo'} · ${formatDuration(metadata.duration)} · ${metadata.estimatedSize ? formatSize(metadata.estimatedSize) : 'live størrelse fra yt-dlp'}`;
   if (metadata.thumbnail) {
@@ -305,10 +306,12 @@ function showTransfer(transfer, job) {
     return;
   }
   mediaSummary.hidden = false;
-  mediaTitle.textContent = job?.metadata?.title || 'Laster ned';
+  mediaMeta.hidden = false;
+  mediaTitle.textContent = job?.metadata?.playlistTitle || job?.metadata?.title || getUrlTitle(job?.url) || 'Laster ned';
   if (job?.status === 'completed' || transfer.percent >= 100) {
-    mediaTitle.textContent = job?.partial ? 'Delvis ferdig' : 'Filen er klar';
-    mediaMeta.textContent = `Ferdig · ${transfer.totalSize || transfer.downloaded}`;
+    mediaTitle.textContent = job?.metadata?.playlistTitle || job?.metadata?.title || getUrlTitle(job?.url) || 'Filen er klar';
+    mediaMeta.textContent = '';
+    mediaMeta.hidden = true;
     return;
   }
   mediaMeta.textContent = `${transfer.downloaded}${transfer.totalSize ? ` · totalt ${transfer.totalSize}` : ''} · ${transfer.speed}${transfer.eta ? ` · ETA ${transfer.eta}` : ''}`;
@@ -383,7 +386,12 @@ async function pollJob(jobId) {
     }
 
     if (job.status === 'interrupted') {
-      if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
+      if (job.saveMode === 'media') {
+        showDriveLinks(job.jobNumber);
+        downloadEndpoint = `/api/jobs/${job.jobId}/download?jobNumber=${job.jobNumber}&recover=1`;
+        downloadButton.hidden = false;
+        downloadButton.disabled = false;
+      }
       progressTitle.textContent = 'Jobben ble avbrutt';
       progressDetail.textContent = job.error || 'Serveren ble restartet. Start jobben på nytt.';
       cancelButton.hidden = true;
@@ -400,14 +408,19 @@ async function pollJob(jobId) {
     updatePlaylistItems(job.items);
     const itemProgress = (job.items || []).map((item) => Number(item.progress) || 0);
     const playlistProgress = itemProgress.length ? itemProgress.reduce((sum, value) => sum + value, 0) / itemProgress.length : null;
+    const allItemsFinished = itemProgress.length > 0 && itemProgress.every((value) => value >= 100);
+    const readyForMediaRecovery = job.saveMode === 'media' && (allItemsFinished || Number(job.progress) >= 100);
     progressTitle.textContent = job.status === 'completed' ? (job.partial ? 'Delvis ferdig' : 'Filen er klar') : 'Behandler filen';
     progressDetail.textContent = detail;
     animateProgress(playlistProgress === null ? job.progress : Math.max(job.progress, playlistProgress));
 
-    if (job.status === 'completed') {
+    if (job.status === 'completed' || readyForMediaRecovery) {
       cancelButton.hidden = true;
       downloadButton.hidden = false;
       downloadButton.disabled = false;
+      downloadEndpoint = job.saveMode === 'media'
+        ? `/api/jobs/${job.jobId}/download?jobNumber=${job.jobNumber}&recover=1`
+        : downloadEndpoint;
       downloadButton.firstChild.textContent = `LAST NED ${videoFormats.includes(job.format) ? 'VIDEO' : job.format.toUpperCase()} `;
       if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
       return;

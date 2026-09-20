@@ -38,10 +38,19 @@ function loadState() {
   try {
     const records = JSON.parse(syncFs.readFileSync(stateFile, 'utf8'));
     for (const job of records) {
-      if (job.status === 'processing' || job.status === 'queued') {
-        job.status = 'interrupted';
-        job.phase = 'Avbrutt etter serverrestart';
-        job.error = 'Serveren ble restartet mens jobben kjørte.';
+      if (job.status === 'processing' || job.status === 'queued' || job.status === 'interrupted') {
+        const hasSavedFiles = job.saveMode === 'media' && job.directory && syncFs.existsSync(job.directory)
+          && syncFs.readdirSync(job.directory, { withFileTypes: true }).some((entry) => entry.isFile());
+        if (hasSavedFiles) {
+          job.status = 'completed';
+          job.progress = 100;
+          job.phase = 'Ferdig (gjenopprettet)';
+          job.error = null;
+        } else {
+          job.status = 'interrupted';
+          job.phase = 'Avbrutt etter serverrestart';
+          job.error = 'Serveren ble restartet mens jobben kjørte.';
+        }
       }
       jobs.set(job.jobId, job);
       nextJobNumber = Math.max(nextJobNumber, Number(job.jobNumber || 0) + 1);
@@ -155,6 +164,11 @@ function processQueue() {
       nextJob.metadata.playlistTitle = title;
       nextJob.metadata.isPlaylist = true;
       addLog(nextJob, `Playlist: ${title}`);
+      scheduleSave();
+    },
+    onThumbnail: (thumbnail) => {
+      if (!nextJob.metadata) nextJob.metadata = { title: 'Rask nedlasting', itemCount: 1, items: [], isPlaylist: false };
+      if (!nextJob.metadata.thumbnail) nextJob.metadata.thumbnail = thumbnail;
       scheduleSave();
     },
     onItemTitle: (index, title) => {

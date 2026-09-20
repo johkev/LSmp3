@@ -169,11 +169,13 @@ app.delete('/api/jobs/:id', (request, response) => {
 
 app.get('/api/jobs/:id/download', (request, response) => {
   const job = getJobRecord(request.params.id);
+  const recoveryRequested = request.query.recover === '1';
   if (!job) {
     const jobNumber = String(request.query.jobNumber || '');
     if (!/^\d+$/.test(jobNumber)) return response.status(404).type('text').send('Jobben finnes ikke lenger.');
     return sendRecoveredMediaJob(response, jobNumber);
   }
+  if (recoveryRequested && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber);
   if (!['completed', 'failed', 'interrupted', 'cancelled'].includes(job.status)) {
     return response.status(409).type('text').send('Filen er ikke klar ennå. Vent til jobben er ferdig.');
   }
@@ -182,6 +184,10 @@ app.get('/api/jobs/:id/download', (request, response) => {
 
   return response.download(job.outputFile, job.filename, async (error) => {
     if (error) {
+      if (job.saveMode === 'media') {
+        sendRecoveredMediaJob(response, job.jobNumber).catch(() => {});
+        return;
+      }
       if (!response.headersSent) response.status(500).type('text').send('Kunne ikke sende filen. Prøv igjen.');
       return;
     }
