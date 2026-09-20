@@ -41,6 +41,7 @@ const playlistOverview = document.querySelector('#playlist-overview');
 const playlistCount = document.querySelector('#playlist-count');
 const playlistActive = document.querySelector('#playlist-active');
 const playlistEta = document.querySelector('#playlist-eta');
+const liveLog = document.querySelector('#live-log');
 const kevinTrigger = document.querySelector('#kevin-trigger');
 const kevinModal = document.querySelector('#kevin-modal');
 const kevinModalClose = document.querySelector('#kevin-modal-close');
@@ -244,6 +245,8 @@ function resetProgress() {
   playlistItems.replaceChildren();
   playlistItems.hidden = true;
   playlistOverview.hidden = true;
+  liveLog.hidden = true;
+  liveLog.textContent = '';
   progressSamples = [];
   window.clearInterval(visualProgressTimer);
   visualProgress = 0;
@@ -280,14 +283,34 @@ function showTransfer(transfer, job) {
   if (!transfer) {
     if (job?.speedMode === 'fast') {
       mediaSummary.hidden = false;
-      mediaTitle.textContent = 'Rask nedlasting';
+      mediaTitle.textContent = job.url ? getUrlTitle(job.url) : 'Rask nedlasting';
       mediaMeta.textContent = `${job.format.toUpperCase()} · starter direkte · metadata hoppet over`;
+      const youtubeId = getYouTubeId(job.url);
+      if (youtubeId) {
+        mediaThumbnail.src = `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`;
+        mediaThumbnail.alt = 'Forhåndsvisning fra YouTube';
+      }
     }
     return;
   }
   mediaSummary.hidden = false;
   mediaTitle.textContent = job?.metadata?.title || 'Laster ned';
   mediaMeta.textContent = `${transfer.downloaded} · ${transfer.speed}${transfer.eta ? ` · ETA ${transfer.eta}` : ''}`;
+}
+
+function getYouTubeId(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname.includes('youtu.be')) return parsed.pathname.slice(1) || null;
+    return parsed.hostname.includes('youtube.com') ? parsed.searchParams.get('v') : null;
+  } catch {
+    return null;
+  }
+}
+
+function getUrlTitle(value) {
+  const id = getYouTubeId(value);
+  return id ? `YouTube-video · ${id}` : 'Rask nedlasting';
 }
 
 function animateProgress(target) {
@@ -317,6 +340,10 @@ async function pollJob(jobId) {
     const detail = job.phase || (job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.');
     showMetadata(job.metadata);
     showTransfer(job.transfer, job);
+    if (job.latestLog) {
+      liveLog.hidden = false;
+      liveLog.textContent = `[${job.latestLog.source.toUpperCase()}] ${job.latestLog.message}`;
+    }
     updatePlaylistItems(job.items);
     progressTitle.textContent = job.status === 'completed' ? (job.partial ? 'Delvis ferdig' : 'Filen er klar') : 'Behandler filen';
     progressDetail.textContent = detail;
@@ -438,6 +465,14 @@ diagnosticsButton.addEventListener('click', async () => {
   loadSystemMonitor();
   if (!currentJobId) {
     logsStatus.textContent = 'Ingen aktiv jobb.';
+    try {
+      const response = await fetch('/api/logs');
+      const payload = await readJsonResponse(response, 'Kunne ikke hente teknisk logg.');
+      currentLogs = payload.logs;
+      renderSelectedLogs();
+    } catch (error) {
+      logsContent.textContent = error.message;
+    }
     return;
   }
   try {

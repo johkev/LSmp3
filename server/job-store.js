@@ -21,6 +21,7 @@ function createJob({ url, format, quality, saveMode = 'temporary', speedMode = '
     progress: 0,
     phase: 'Venter i kø',
     transfer: null,
+    latestLog: null,
     metadata: null,
     items: [],
     createdAt: new Date().toISOString(),
@@ -61,6 +62,7 @@ function publicJob(job) {
     progress: job.progress,
     phase: job.phase,
     ...(job.transfer ? { transfer: job.transfer } : {}),
+    ...(job.latestLog ? { latestLog: job.latestLog } : {}),
     format: job.format,
     speedMode: job.speedMode,
     saveMode: job.saveMode,
@@ -147,7 +149,9 @@ function processQueue() {
 
 function addLog(job, message, source = 'app') {
   if (!job.logs) job.logs = [];
-  job.logs.push({ time: new Date().toISOString(), source, message: String(message).slice(0, 500) });
+  const entry = { time: new Date().toISOString(), source, message: String(message).slice(0, 500) };
+  job.latestLog = entry;
+  job.logs.push(entry);
   if (job.logs.length > 200) job.logs.shift();
 }
 
