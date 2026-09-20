@@ -2,7 +2,7 @@ const { randomUUID } = require('node:crypto');
 const fs = require('node:fs/promises');
 const syncFs = require('node:fs');
 const path = require('node:path');
-const { removeJobFiles, runDownload } = require('./media-downloader');
+const { mediaDirectory, removeJobFiles, runDownload } = require('./media-downloader');
 const { addSystemLog } = require('./log-store');
 
 const jobs = new Map();
@@ -53,17 +53,29 @@ function loadState() {
         }
       }
       jobs.set(job.jobId, job);
-      nextJobNumber = Math.max(nextJobNumber, Number(job.jobNumber || 0) + 1);
+      if (job.saveMode !== 'media') nextJobNumber = Math.max(nextJobNumber, Number(job.jobNumber || 0) + 1);
     }
   } catch (error) {
     if (error.code !== 'ENOENT') console.error('[ERROR] Kunne ikke lese jobbstatus', error.message);
   }
 }
 
+function findAvailableMediaJobNumber() {
+  let jobNumber = 1;
+  while ([...jobs.values()].some((job) => job.saveMode === 'media'
+      && Number(job.jobNumber) === jobNumber
+      && ['queued', 'processing'].includes(job.status))
+    || syncFs.existsSync(path.join(mediaDirectory, `jobb${jobNumber}`))) {
+    jobNumber += 1;
+  }
+  return jobNumber;
+}
+
 function createJob({ url, format, quality, saveMode = 'temporary', speedMode = 'info' }) {
+  const jobNumber = saveMode === 'media' ? findAvailableMediaJobNumber() : nextJobNumber++;
   const job = {
     jobId: randomUUID(),
-    jobNumber: nextJobNumber++,
+    jobNumber,
     url,
     format,
     quality,

@@ -5,7 +5,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const express = require('express');
 const { cancelJob, createJob, getJob, getJobLogs, getJobRecord, getJobStats, shutdownJobs } = require('./job-store');
-const { cleanupDownloads, createArchiveCopy, downloadsDirectory, mediaDirectory, removeJobFiles, searchMedia } = require('./media-downloader');
+const { cleanupDownloads, createArchiveCopy, createArchiveFileName, downloadsDirectory, mediaDirectory, removeJobFiles, searchMedia } = require('./media-downloader');
 const { addSystemLog, getSystemLogs } = require('./log-store');
 
 const app = express();
@@ -177,17 +177,17 @@ app.get('/api/jobs/:id/download', (request, response) => {
     if (!/^\d+$/.test(jobNumber)) return response.status(404).type('text').send('Jobben finnes ikke lenger.');
     return sendRecoveredMediaJob(response, jobNumber);
   }
-  if (recoveryRequested && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber);
+  if (recoveryRequested && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber, job.metadata);
   if (!['completed', 'failed', 'interrupted', 'cancelled'].includes(job.status)) {
     return response.status(409).type('text').send('Filen er ikke klar ennå. Vent til jobben er ferdig.');
   }
 
-  if (!job.outputFile && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber);
+  if (!job.outputFile && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber, job.metadata);
 
   if (job.saveMode === 'media') {
     return fs.access(job.outputFile)
       .then(() => sendJobFile(response, job))
-      .catch(() => sendRecoveredMediaJob(response, job.jobNumber));
+      .catch(() => sendRecoveredMediaJob(response, job.jobNumber, job.metadata));
   }
 
   return sendJobFile(response, job);
@@ -197,7 +197,7 @@ function sendJobFile(response, job) {
   return response.download(job.outputFile, job.filename, async (error) => {
     if (error) {
       if (job.saveMode === 'media') {
-        sendRecoveredMediaJob(response, job.jobNumber).catch(() => {});
+        sendRecoveredMediaJob(response, job.jobNumber, job.metadata).catch(() => {});
         return;
       }
       if (!response.headersSent) response.status(500).type('text').send('Kunne ikke sende filen. Prøv igjen.');
@@ -211,14 +211,14 @@ function sendJobFile(response, job) {
   });
 }
 
-async function sendRecoveredMediaJob(response, jobNumber) {
+async function sendRecoveredMediaJob(response, jobNumber, metadata = null) {
   const directory = path.join(mediaDirectory, `jobb${jobNumber}`);
   try {
     const entries = await fs.readdir(directory, { withFileTypes: true });
     const files = entries.filter((entry) => entry.isFile()).map((entry) => path.join(directory, entry.name));
     if (!files.length) return response.status(404).type('text').send('Ingen ferdige filer finnes i jobbmappen.');
     if (files.length === 1) return response.download(files[0], path.basename(files[0]));
-    const archivePath = path.join(downloadsDirectory, `jobb${jobNumber}-resultat.zip`);
+    const archivePath = path.join(downloadsDirectory, createArchiveFileName(metadata?.playlistTitle || metadata?.title || `jobb${jobNumber}-resultat`));
     await createArchiveCopy(directory, archivePath);
     return response.download(archivePath, path.basename(archivePath), () => {
       fs.rm(archivePath, { force: true }).catch(() => {});

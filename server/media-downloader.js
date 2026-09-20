@@ -179,8 +179,19 @@ async function findOutputFiles(jobDirectory) {
   return files.map((file) => path.join(jobDirectory, file));
 }
 
-async function createArchive(jobDirectory, files) {
-  const archivePath = path.join(jobDirectory, 'laensmann-playlist.zip');
+function createArchiveFileName(title) {
+  const safeTitle = String(title || 'laensmann-playlist')
+    .normalize('NFKC')
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+    .slice(0, 120);
+  return `${safeTitle || 'laensmann-playlist'}.zip`;
+}
+
+async function createArchive(jobDirectory, files, archiveName) {
+  const archivePath = path.join(jobDirectory, archiveName || createArchiveFileName());
   await new Promise((resolve, reject) => {
     const output = createWriteStream(archivePath);
     const archive = new ZipArchive({ zlib: { level: 6 } });
@@ -189,7 +200,7 @@ async function createArchive(jobDirectory, files) {
     archive.on('error', reject);
     archive.pipe(output);
     for (const file of files) archive.file(file, { name: path.basename(file) });
-    archive.finalize();
+    archive.finalize().catch(reject);
   });
   await Promise.all(files.map((file) => fs.unlink(file)));
   return archivePath;
@@ -207,7 +218,7 @@ async function createArchiveCopy(directory, archivePath) {
     archive.on('error', reject);
     archive.pipe(output);
     for (const file of files) archive.file(file, { name: path.basename(file) });
-    archive.finalize();
+    archive.finalize().catch(reject);
   });
   return archivePath;
 }
@@ -282,7 +293,7 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
       try {
         const files = await findOutputFiles(jobDirectory);
         const outputFile = metadata.isPlaylist || files.length > 1
-          ? await createArchive(jobDirectory, files)
+          ? await createArchive(jobDirectory, files, createArchiveFileName(metadata.playlistTitle || metadata.title))
           : files[0];
         const lastError = stderr.trim().split('\n').filter(Boolean).pop() || '';
         finish(null, outputFile, {
@@ -341,4 +352,4 @@ async function cleanupDownloads() {
 }
 
 module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, mediaDirectory, removeJobFiles, runDownload, searchMedia };
-module.exports = { cleanupDownloads, createArchiveCopy, downloadsDirectory, inspectMedia, mediaDirectory, removeJobFiles, runDownload, searchMedia };
+module.exports = { cleanupDownloads, createArchiveCopy, createArchiveFileName, downloadsDirectory, inspectMedia, mediaDirectory, removeJobFiles, runDownload, searchMedia };
