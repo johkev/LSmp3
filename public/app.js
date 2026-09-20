@@ -39,7 +39,6 @@ const jobNumberElement = document.querySelector('#job-number');
 const playlistItems = document.querySelector('#playlist-items');
 const playlistOverview = document.querySelector('#playlist-overview');
 const playlistCount = document.querySelector('#playlist-count');
-const playlistActive = document.querySelector('#playlist-active');
 const playlistEta = document.querySelector('#playlist-eta');
 const liveLog = document.querySelector('#live-log');
 const kevinTrigger = document.querySelector('#kevin-trigger');
@@ -69,6 +68,7 @@ let currentJobId = null;
 let pollTimer;
 let pollFailures = 0;
 let cancellingJob = false;
+let lastJobSnapshot = null;
 let selectedMediaUrl = '';
 let progressSamples = [];
 let visualProgress = 0;
@@ -191,8 +191,22 @@ function renderPlaylistItems(items) {
   }
 }
 
+function ensurePlaylistRows(items) {
+  for (const item of items || []) {
+    if (playlistItems.querySelector(`[data-index="${item.index}"]`)) continue;
+    const row = document.createElement('div');
+    row.className = 'playlist-item';
+    row.dataset.index = item.index;
+    row.innerHTML = '<span class="playlist-item-state"></span><span class="playlist-item-main"><span class="playlist-item-title"></span><span class="playlist-item-track"><span></span></span></span><span class="playlist-item-progress">Venter</span>';
+    row.querySelector('.playlist-item-title').textContent = item.title || `Element ${item.index}`;
+    playlistItems.append(row);
+  }
+  playlistItems.hidden = items.length === 0;
+}
+
 function updatePlaylistItems(items) {
   if (!items || items.length === 0) return;
+  ensurePlaylistRows(items);
   playlistOverview.hidden = false;
   const completed = items.filter((item) => item.status === 'completed').length;
   playlistCount.textContent = `${completed} av ${items.length} ferdig`;
@@ -239,6 +253,7 @@ async function readJsonResponse(response, fallbackMessage) {
 function resetProgress() {
   window.clearTimeout(pollTimer);
   currentJobId = null;
+  lastJobSnapshot = null;
   pollFailures = 0;
   cancellingJob = false;
   progressPanel.hidden = true;
@@ -277,8 +292,8 @@ function formatSize(bytes) {
 function showMetadata(metadata) {
   if (!metadata) return;
   mediaSummary.hidden = false;
-  mediaTitle.textContent = metadata.title || 'Mediejobb';
-  mediaMeta.textContent = `${metadata.isPlaylist ? `${metadata.itemCount} elementer` : 'Enkeltvideo'} · ${formatDuration(metadata.duration)} · ${formatSize(metadata.estimatedSize)}`;
+  mediaTitle.textContent = metadata.playlistTitle ? `Playlist: ${metadata.playlistTitle}` : metadata.title || 'Mediejobb';
+  mediaMeta.textContent = `${metadata.isPlaylist ? `${metadata.itemCount} elementer` : 'Enkeltvideo'} · ${formatDuration(metadata.duration)} · ${metadata.estimatedSize ? formatSize(metadata.estimatedSize) : 'live størrelse fra yt-dlp'}`;
   if (metadata.thumbnail) {
     mediaThumbnail.src = metadata.thumbnail;
     mediaThumbnail.alt = `Forhåndsvisning av ${metadata.title || 'mediet'}`;
@@ -302,7 +317,7 @@ function showTransfer(transfer, job) {
   }
   mediaSummary.hidden = false;
   mediaTitle.textContent = job?.metadata?.title || 'Laster ned';
-  mediaMeta.textContent = `${transfer.downloaded} · ${transfer.speed}${transfer.eta ? ` · ETA ${transfer.eta}` : ''}`;
+  mediaMeta.textContent = `${transfer.downloaded}${transfer.totalSize ? ` · totalt ${transfer.totalSize}` : ''} · ${transfer.speed}${transfer.eta ? ` · ETA ${transfer.eta}` : ''}`;
 }
 
 function getYouTubeId(value) {
@@ -336,10 +351,17 @@ function animateProgress(target) {
 
 async function pollJob(jobId) {
   try {
-    const response = await fetch(`/api/jobs/${jobId}`);
+    const response = await fetch(`/api/jobs/${jobId}?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
     const job = await readJsonResponse(response, 'Status-endepunktet returnerte ikke JSON.');
+    if (response.status === 404) {
+      progressTitle.textContent = 'Jobben finnes ikke lenger';
+      progressDetail.textContent = 'Serveren har blitt restartet. Start jobben på nytt.';
+      cancelButton.hidden = true;
+      return;
+    }
     if (!response.ok) throw new Error(job.error || 'Kunne ikke hente jobbstatus.');
     pollFailures = 0;
+    lastJobSnapshot = job;
 
     if (job.status === 'failed') {
       if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
@@ -354,9 +376,11 @@ async function pollJob(jobId) {
       liveLog.textContent = `[${job.latestLog.source.toUpperCase()}] ${job.latestLog.message}`;
     }
     updatePlaylistItems(job.items);
+    const itemProgress = (job.items || []).map((item) => Number(item.progress) || 0);
+    const playlistProgress = itemProgress.length ? itemProgress.reduce((sum, value) => sum + value, 0) / itemProgress.length : null;
     progressTitle.textContent = job.status === 'completed' ? (job.partial ? 'Delvis ferdig' : 'Filen er klar') : 'Behandler filen';
     progressDetail.textContent = detail;
-    animateProgress(job.progress);
+    animateProgress(playlistProgress === null ? job.progress : Math.max(job.progress, playlistProgress));
 
     if (job.status === 'completed') {
       cancelButton.hidden = true;
@@ -382,6 +406,11 @@ async function pollJob(jobId) {
   } catch (error) {
     if (cancellingJob) return;
     pollFailures += 1;
+    if (lastJobSnapshot) {
+      showMetadata(lastJobSnapshot.metadata);
+      showTransfer(lastJobSnapshot.transfer, lastJobSnapshot);
+      updatePlaylistItems(lastJobSnapshot.items);
+    }
     progressTitle.textContent = 'Venter på serveren';
     progressDetail.textContent = `Midlertidig statusfeil (${pollFailures}/10). Prøver igjen...`;
     if (pollFailures >= 10) {
@@ -502,11 +531,11 @@ diagnosticsButton.addEventListener('click', async () => {
     return;
   }
   try {
-    const statusResponse = await fetch(`/api/jobs/${currentJobId}`);
-    const response = await fetch(`/api/jobs/${currentJobId}/logs`);
+    const statusResponse = await fetch(`/api/jobs/${currentJobId}?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const response = await fetch(`/api/jobs/${currentJobId}/logs?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
     const status = await readJsonResponse(statusResponse, 'Kunne ikke lese jobbstatus.');
     const payload = await readJsonResponse(response, 'Kunne ikke lese jobbloggen.');
-    logsStatus.textContent = `Jobb ${currentJobId} · ${status.status} · ${status.progress}% · ${status.format}`;
+    logsStatus.textContent = `Jobb ${status.jobNumber ?? currentJobId} · ${status.status || 'ukjent status'} · ${Math.round(Number(status.progress) || 0)}% · ${status.format || 'ukjent format'}`;
     currentLogs = payload.logs;
     renderSelectedLogs();
   } catch {

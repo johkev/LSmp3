@@ -109,7 +109,7 @@ function processQueue() {
         item.progress = progress;
         if (transfer) item.transfer = transfer;
       }
-      if (!item && total) nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress });
+      if (!item && total) nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress, transfer: transfer || null });
     },
     onProcess: (process) => {
       nextJob.process = process;

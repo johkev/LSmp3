@@ -143,6 +143,8 @@ app.post('/api/jobs', (request, response) => {
 
 app.get('/api/jobs/:id', (request, response) => {
   response.set('Cache-Control', 'no-store');
+    response.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    response.set('Content-Type', 'application/json; charset=utf-8');
   const job = getJob(request.params.id);
   if (!job) {
     return response.status(404).json({ error: 'Jobben finnes ikke.' });

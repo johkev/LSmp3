@@ -126,14 +126,18 @@ function formatMetadata(metadata) {
   const entries = metadata.entries || [metadata];
   const items = entries.filter((entry) => entry && (entry.title || entry.id));
   const first = items[0] || metadata || {};
+  const firstThumbnail = first.thumbnail || (first.id ? `https://i.ytimg.com/vi/${first.id}/hqdefault.jpg` : null);
+  const isPlaylist = items.length > 1 || Boolean(metadata.playlist_count && metadata.playlist_count > 1) || Boolean(metadata.entries);
+  const playlistTitle = metadata.playlist_title || (isPlaylist ? metadata.title : null) || first.playlist_title || null;
   return {
-    title: metadata.playlist_title || first.playlist_title || first.title || 'Mediejobb',
-    thumbnail: metadata.thumbnail || first.thumbnail || null,
+    title: playlistTitle || first.title || 'Mediejobb',
+    playlistTitle,
+    thumbnail: metadata.thumbnail || firstThumbnail,
     itemCount: items.length || 1,
     duration: items.reduce((total, entry) => total + (Number(entry.duration) || 0), 0),
     estimatedSize: items.reduce((total, entry) => total + (Number(entry.filesize_approx) || 0), 0),
     items: items.map((entry, index) => ({ index: Number(entry.playlist_index) || index + 1, title: entry.title || 'Uten tittel', thumbnail: entry.thumbnail || null })),
-    isPlaylist: items.length > 1 || Boolean(metadata.playlist_count && metadata.playlist_count > 1)
+    isPlaylist
   };
 }
 
@@ -222,28 +226,25 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
       error ? reject(error) : resolve({ outputFile, ...details });
     }
 
-    child.stdout.on('data', (chunk) => {
-      for (const line of chunk.toString().split(/\r?\n/)) {
-        if (line.trim()) onLog(line.trim(), 'ytdlp');
-        parseTransfer(line, onTransfer);
-        const itemMatch = line.match(/Downloading item (\d+) of (\d+)/i);
+    function processOutput(text, source) {
+      for (const line of text.split(/\r?\n/).filter(Boolean)) {
+        const trimmed = line.trim();
+        if (source === 'stderr') stderr += `${trimmed}\n`;
+        onLog(trimmed.slice(0, 500), /ffmpeg/i.test(trimmed) ? 'ffmpeg' : 'ytdlp');
+        const itemMatch = trimmed.match(/Downloading item (\d+) of (\d+)/i);
         if (itemMatch) {
           currentItem = Number(itemMatch[1]);
           onItemProgress(currentItem, 0, Number(itemMatch[2]));
         }
-        const progress = parseProgress(line);
+        const progress = parseProgress(trimmed);
         if (progress !== null) onProgress(Math.min(progress, 95));
-        if (progress !== null && currentItem) onItemProgress(currentItem, progress, null, parseTransferLine(line));
+        if (progress !== null && currentItem) onItemProgress(currentItem, progress, null, parseTransferLine(trimmed));
+        parseTransfer(trimmed, onTransfer);
       }
-    });
-    child.stderr.on('data', (chunk) => {
-      const text = chunk.toString();
-      stderr += text;
-      for (const line of text.split(/\r?\n/).filter(Boolean)) {
-        parseTransfer(line, onTransfer);
-        onLog(line.slice(0, 500), /ffmpeg/i.test(line) ? 'ffmpeg' : 'ytdlp');
-      }
-    });
+    }
+
+    child.stdout.on('data', (chunk) => processOutput(chunk.toString(), 'stdout'));
+    child.stderr.on('data', (chunk) => processOutput(chunk.toString(), 'stderr'));
     child.on('error', (error) => finish(error.code === 'ENOENT' ? new Error(`${command} er ikke installert på serveren.`) : error));
     child.on('close', async (code) => {
       try {
@@ -268,14 +269,23 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
 }
 
 function parseTransfer(line, onTransfer) {
-  const match = line.match(/(\d+(?:\.\d+)?)%.*?of\s+([\d.]+)([KMG]i?B).*?at\s+([\d.]+)([KMG]i?B\/s).*?(?:ETA\s+([\d:]+))?/i);
-  if (!match) return;
-  onTransfer({
-    percent: Math.min(99, Math.round(Number(match[1]))),
-    downloaded: `${match[1]}% av ${match[2]} ${match[3]}`,
-    speed: `${match[4]} ${match[5]}`,
-    eta: match[6] || null
-  });
+  const transfer = parseTransferLine(line);
+  if (transfer) onTransfer(transfer);
+}
+
+function parseTransferLine(line) {
+  const percentMatch = line.match(/(\d+(?:\.\d+)?)%/);
+  const sizeMatch = line.match(/of\s+([\d.]+)\s*([KMG]i?B)/i);
+  const speedMatch = line.match(/at\s+([\d.]+|Unknown)\s*([KMG]i?B\/s|B\/s)/i);
+  const etaMatch = line.match(/ETA\s+([\d:]+|Unknown)/i);
+  if (!percentMatch || !sizeMatch) return null;
+  return {
+    percent: Math.min(99, Math.round(Number(percentMatch[1]))),
+    downloaded: `${percentMatch[1]}% av ${sizeMatch[1]} ${sizeMatch[2]}`,
+    totalSize: `${sizeMatch[1]} ${sizeMatch[2]}`,
+    speed: speedMatch ? `${speedMatch[1]} ${speedMatch[2]}` : 'beregner hastighet',
+    eta: etaMatch && etaMatch[1] !== 'Unknown' ? etaMatch[1] : null
+  };
 }
 
 async function removeJobFiles(jobId) {
