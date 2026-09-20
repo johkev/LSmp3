@@ -152,6 +152,7 @@ function addLog(job, message, source = 'app') {
   const entry = { time: new Date().toISOString(), source, message: String(message).slice(0, 500) };
   job.latestLog = entry;
   job.logs.push(entry);
+  if (source === 'ytdlp' || source === 'ffmpeg') addSystemLog('INFO', message, source);
   if (job.logs.length > 200) job.logs.shift();
 }
 

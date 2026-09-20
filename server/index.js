@@ -27,6 +27,7 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
 
 app.get('/api/health', (request, response) => {
+  response.set('Cache-Control', 'no-store');
   response.json({
     status: 'ok',
     service: 'laensmann-mp3',
@@ -52,6 +53,7 @@ app.get('/api/search', async (request, response) => {
 });
 
 app.get('/api/logs', (request, response) => {
+  response.set('Cache-Control', 'no-store');
   return response.json({ logs: getSystemLogs() });
 });
 
@@ -140,6 +142,7 @@ app.post('/api/jobs', (request, response) => {
 });
 
 app.get('/api/jobs/:id', (request, response) => {
+  response.set('Cache-Control', 'no-store');
   const job = getJob(request.params.id);
   if (!job) {
     return response.status(404).json({ error: 'Jobben finnes ikke.' });

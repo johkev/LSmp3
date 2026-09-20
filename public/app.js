@@ -67,6 +67,8 @@ const videoFormats = ['mp4', 'mkv', 'webm'];
 
 let currentJobId = null;
 let pollTimer;
+let pollFailures = 0;
+let cancellingJob = false;
 let selectedMediaUrl = '';
 let progressSamples = [];
 let visualProgress = 0;
@@ -234,6 +236,8 @@ async function readJsonResponse(response, fallbackMessage) {
 function resetProgress() {
   window.clearTimeout(pollTimer);
   currentJobId = null;
+  pollFailures = 0;
+  cancellingJob = false;
   progressPanel.hidden = true;
   downloadButton.hidden = true;
   downloadButton.disabled = true;
@@ -332,6 +336,7 @@ async function pollJob(jobId) {
     const response = await fetch(`/api/jobs/${jobId}`);
     const job = await readJsonResponse(response, 'Status-endepunktet returnerte ikke JSON.');
     if (!response.ok) throw new Error(job.error || 'Kunne ikke hente jobbstatus.');
+    pollFailures = 0;
 
     if (job.status === 'failed') {
       throw new Error(job.error || 'Serveren klarte ikke å behandle filen.');
@@ -372,9 +377,16 @@ async function pollJob(jobId) {
 
     pollTimer = window.setTimeout(() => pollJob(jobId), 400);
   } catch (error) {
-    progressTitle.textContent = 'Jobben feilet';
-    progressDetail.textContent = error.message;
-    formMessage.textContent = 'Kunne ikke fullføre nedlastingen. Kontroller URL-en og prøv igjen.';
+    if (cancellingJob) return;
+    pollFailures += 1;
+    progressTitle.textContent = 'Venter på serveren';
+    progressDetail.textContent = `Midlertidig statusfeil (${pollFailures}/10). Prøver igjen...`;
+    if (pollFailures >= 10) {
+      formMessage.textContent = error.message;
+      progressTitle.textContent = 'Kunne ikke lese jobbstatus';
+      return;
+    }
+    pollTimer = window.setTimeout(() => pollJob(jobId), 1000);
   }
 }
 
@@ -449,10 +461,14 @@ downloadButton.addEventListener('click', async () => {
 async function cancelCurrentJob() {
   if (!currentJobId) return;
   cancelButton.disabled = true;
+  cancellingJob = true;
+  window.clearTimeout(pollTimer);
   try {
     await fetch(`/api/jobs/${currentJobId}`, { method: 'DELETE', keepalive: true });
     cancelButton.hidden = true;
     setProgress(progressValue.textContent.replace('%', ''), 'Jobben er avbrutt', 'Nedlastingen ble stoppet.');
+    progressTitle.textContent = 'Jobben er avbrutt';
+    progressDetail.textContent = 'Ingen flere statusforespørsler sendes.';
   } finally {
     cancelButton.disabled = false;
   }
