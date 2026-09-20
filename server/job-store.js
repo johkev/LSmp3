@@ -70,6 +70,7 @@ function publicJob(job) {
     ...(job.items.length ? { items: job.items } : {}),
     ...(job.filename ? { filename: job.filename } : {}),
     ...(job.error ? { error: job.error } : {}),
+    ...(job.directory ? { directory: job.directory } : {}),
     ...(job.partial ? { partial: true, partialError: job.partialError } : {}),
     ...(job.logs ? { logCount: job.logs.length } : {}),
     createdAt: job.createdAt
@@ -127,8 +128,10 @@ function processQueue() {
     })
     .catch(async (error) => {
       if (nextJob.cancelRequested) {
-        if (nextJob.directory) await fs.rm(nextJob.directory, { recursive: true, force: true });
-        else await removeJobFiles(nextJob.jobId);
+        if (nextJob.saveMode !== 'media') {
+          if (nextJob.directory) await fs.rm(nextJob.directory, { recursive: true, force: true });
+          else await removeJobFiles(nextJob.jobId);
+        }
         addSystemLog('INFO', `Jobb ${nextJob.jobNumber} avbrutt`);
         return;
       }
@@ -137,8 +140,10 @@ function processQueue() {
       nextJob.error = error.message;
       addLog(nextJob, `FEIL: ${error.message}`);
       addSystemLog('ERROR', `Jobb ${nextJob.jobNumber}: ${error.message}`);
-      if (nextJob.directory) await fs.rm(nextJob.directory, { recursive: true, force: true });
-      else await removeJobFiles(nextJob.jobId);
+      if (nextJob.saveMode !== 'media') {
+        if (nextJob.directory) await fs.rm(nextJob.directory, { recursive: true, force: true });
+        else await removeJobFiles(nextJob.jobId);
+      }
       console.error(`[ERROR] Job failed ${nextJob.jobId}: ${error.message}`);
     })
     .finally(() => {

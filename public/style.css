@@ -173,7 +173,7 @@ select { cursor: pointer; font-size: 1rem; }
 .playlist-items[hidden] { display: none; }
 .playlist-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border-light); border-radius: 8px; color: var(--muted); background: rgba(255, 255, 255, .3); font-size: .78rem; }
 .playlist-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.playlist-item-state { color: var(--brand-dark); font-weight: 700; }
+.playlist-item-state { color: var(--brand-dark); font: 10px "DM Mono", monospace; font-weight: 700; }
 .playlist-item-progress { font: 10px "DM Mono", monospace; }
 .playlist-item.is-complete .playlist-item-state { color: #16735b; }
 .playlist-item.is-failed .playlist-item-state { color: #8c2d1d; }

@@ -185,7 +185,7 @@ function renderPlaylistItems(items) {
     const row = document.createElement('div');
     row.className = 'playlist-item';
     row.dataset.index = item.index;
-    row.innerHTML = '<span class="playlist-item-state">○</span><span class="playlist-item-title"></span><span class="playlist-item-progress">0%</span>';
+    row.innerHTML = '<span class="playlist-item-state">Venter</span><span class="playlist-item-title"></span><span class="playlist-item-progress">Ikke startet</span>';
     row.querySelector('.playlist-item-title').textContent = item.title || 'Uten tittel';
     playlistItems.append(row);
   }
@@ -195,9 +195,7 @@ function updatePlaylistItems(items) {
   if (!items || items.length === 0) return;
   playlistOverview.hidden = false;
   const completed = items.filter((item) => item.status === 'completed').length;
-  const active = items.find((item) => item.status === 'processing');
   playlistCount.textContent = `${completed} av ${items.length} ferdig`;
-  playlistActive.textContent = active ? `Aktiv: ${active.title}` : completed === items.length ? 'Alle elementer ferdig' : 'Venter på aktivt element';
   const now = Date.now();
   const currentProgress = items.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / items.length;
   progressSamples.push({ time: now, progress: currentProgress });
@@ -212,8 +210,9 @@ function updatePlaylistItems(items) {
   for (const item of items || []) {
     const row = playlistItems.querySelector(`[data-index="${item.index}"]`);
     if (!row) continue;
-    row.querySelector('.playlist-item-progress').textContent = `${item.progress || 0}%`;
-    row.querySelector('.playlist-item-state').textContent = item.status === 'completed' ? '✓' : item.status === 'processing' ? '●' : item.status === 'failed' ? '!' : '○';
+    const statusText = item.status === 'completed' ? 'Ferdig' : item.status === 'processing' ? 'Laster ned' : item.status === 'failed' ? 'Feilet' : 'Venter';
+    row.querySelector('.playlist-item-progress').textContent = statusText;
+    row.querySelector('.playlist-item-state').textContent = statusText;
     row.classList.toggle('is-complete', item.status === 'completed');
     row.classList.toggle('is-failed', item.status === 'failed');
   }
@@ -339,6 +338,7 @@ async function pollJob(jobId) {
     pollFailures = 0;
 
     if (job.status === 'failed') {
+      if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
       throw new Error(job.error || 'Serveren klarte ikke å behandle filen.');
     }
 
@@ -359,16 +359,15 @@ async function pollJob(jobId) {
       downloadButton.hidden = false;
       downloadButton.disabled = false;
       downloadButton.firstChild.textContent = `LAST NED ${videoFormats.includes(job.format) ? 'VIDEO' : job.format.toUpperCase()} `;
-      if (job.saveMode === 'media') {
-        driveRootButton.hidden = false;
-        driveJobButton.hidden = false;
-        driveJobButton.href = `https://drive.lensmann.studio/files/LS%20NEDLASTEREN/jobb${job.jobNumber}/`;
-      }
+      if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
       return;
     }
 
     if (job.status === 'cancelled') {
       cancelButton.hidden = true;
+      if (job.saveMode === 'media') {
+        showDriveLinks(job.jobNumber);
+      }
       setProgress(job.progress, 'Jobben er avbrutt', 'Nedlastingen ble stoppet.');
       return;
     }
@@ -388,6 +387,12 @@ async function pollJob(jobId) {
     }
     pollTimer = window.setTimeout(() => pollJob(jobId), 1000);
   }
+}
+
+function showDriveLinks(jobNumber) {
+  driveRootButton.hidden = false;
+  driveJobButton.hidden = false;
+  driveJobButton.href = `https://drive.lensmann.studio/files/LS%20NEDLASTEREN/jobb${jobNumber}/`;
 }
 
 urlInput.addEventListener('input', setUrlState);
@@ -427,6 +432,7 @@ form.addEventListener('submit', async (event) => {
     if (!response.ok) throw new Error(job.error || 'Kunne ikke starte jobben.');
     currentJobId = job.jobId;
     jobNumberElement.textContent = `JOB / ${String(job.jobNumber).padStart(4, '0')}`;
+    if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
     await pollJob(currentJobId);
   } catch (error) {
     formMessage.textContent = error.message;
