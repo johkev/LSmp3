@@ -102,6 +102,18 @@ function processQueue() {
       nextJob.items = (metadata.items || []).map((item) => ({ ...item, status: 'queued', progress: 0 }));
       addLog(nextJob, `Metadata mottatt: ${metadata.title}`);
     },
+    onPlaylistTitle: (title) => {
+      if (!nextJob.metadata) nextJob.metadata = { title, playlistTitle: title, itemCount: nextJob.items.length || 1, items: [], isPlaylist: true };
+      nextJob.metadata.title = title;
+      nextJob.metadata.playlistTitle = title;
+      nextJob.metadata.isPlaylist = true;
+      addLog(nextJob, `Playlist: ${title}`);
+    },
+    onItemTitle: (index, title) => {
+      const item = nextJob.items.find((entry) => entry.index === index);
+      if (item) item.title = title;
+      else nextJob.items.push({ index, title, status: 'processing', progress: 0, transfer: null });
+    },
     onItemProgress: (index, progress, total, transfer) => {
       const item = nextJob.items.find((entry) => entry.index === index);
       if (item) {

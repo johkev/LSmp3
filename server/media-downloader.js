@@ -167,7 +167,7 @@ async function inspectMedia(url) {
 
 function parseProgress(line) {
   const match = line.match(/(\d+(?:\.\d+)?)%/);
-  return match ? Math.min(99, Math.round(Number(match[1]))) : null;
+  return match ? Math.min(100, Math.round(Number(match[1]))) : null;
 }
 
 async function findOutputFiles(jobDirectory) {
@@ -193,7 +193,7 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onLog, onItemProgress, onProcess, onDirectory }) {
+async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onLog, onItemProgress, onItemTitle, onPlaylistTitle, onProcess, onDirectory }) {
   const jobDirectory = saveMode === 'media'
     ? path.join(mediaDirectory, `jobb${jobNumber}`)
     : path.join(downloadsDirectory, jobId);
@@ -235,6 +235,16 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
         if (itemMatch) {
           currentItem = Number(itemMatch[1]);
           onItemProgress(currentItem, 0, Number(itemMatch[2]));
+        }
+        const playlistMatch = trimmed.match(/Downloading playlist:\s*(.+)$/i);
+        if (playlistMatch) onPlaylistTitle(playlistMatch[1].trim());
+        const destinationMatch = trimmed.match(/Destination:\s*(.+)$/i);
+        if (destinationMatch && currentItem) {
+          const filename = path.basename(destinationMatch[1].trim());
+          const title = filename
+            .replace(/^\d+\s*-\s*/, '')
+            .replace(/\.[^.]+$/, '');
+          onItemTitle(currentItem, title);
         }
         const progress = parseProgress(trimmed);
         if (progress !== null) onProgress(Math.min(progress, 95));
@@ -280,7 +290,7 @@ function parseTransferLine(line) {
   const etaMatch = line.match(/ETA\s+([\d:]+|Unknown)/i);
   if (!percentMatch || !sizeMatch) return null;
   return {
-    percent: Math.min(99, Math.round(Number(percentMatch[1]))),
+    percent: Math.min(100, Math.round(Number(percentMatch[1]))),
     downloaded: `${percentMatch[1]}% av ${sizeMatch[1]} ${sizeMatch[2]}`,
     totalSize: `${sizeMatch[1]} ${sizeMatch[2]}`,
     speed: speedMatch ? `${speedMatch[1]} ${speedMatch[2]}` : 'beregner hastighet',

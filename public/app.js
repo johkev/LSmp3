@@ -208,7 +208,7 @@ function updatePlaylistItems(items) {
   if (!items || items.length === 0) return;
   ensurePlaylistRows(items);
   playlistOverview.hidden = false;
-  const completed = items.filter((item) => item.status === 'completed').length;
+  const completed = items.filter((item) => item.status === 'completed' || Number(item.progress) >= 100).length;
   playlistCount.textContent = `${completed} av ${items.length} ferdig`;
   const now = Date.now();
   const currentProgress = items.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / items.length;
@@ -224,7 +224,7 @@ function updatePlaylistItems(items) {
     for (const item of items) {
     const row = playlistItems.querySelector(`[data-index="${item.index}"]`);
     if (!row) continue;
-      const statusText = item.status === 'completed' ? 'Ferdig' : item.status === 'processing' ? 'Laster ned' : item.status === 'failed' ? 'Feilet' : 'Venter';
+      const statusText = item.status === 'completed' || Number(item.progress) >= 100 ? 'Ferdig' : item.status === 'processing' ? 'Laster ned' : item.status === 'failed' ? 'Feilet' : 'Venter';
       const transfer = item.transfer;
       row.querySelector('.playlist-item-progress').textContent = transfer
         ? `${transfer.downloaded} · ${transfer.speed}${transfer.eta ? ` · ${transfer.eta}` : ''}`
@@ -354,6 +354,14 @@ async function pollJob(jobId) {
     const response = await fetch(`/api/jobs/${jobId}?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
     const job = await readJsonResponse(response, 'Status-endepunktet returnerte ikke JSON.');
     if (response.status === 404) {
+      const allItemsFinished = lastJobSnapshot?.items?.length > 0 && lastJobSnapshot.items.every((item) => item.status === 'completed' || Number(item.progress) >= 100);
+      if (lastJobSnapshot && (Number(lastJobSnapshot.progress) >= 100 || allItemsFinished)) {
+        progressTitle.textContent = lastJobSnapshot.partial ? 'Delvis ferdig' : 'Filen er klar';
+        progressDetail.textContent = 'Serveren mistet jobbstatusen etter fullføring. Bruk Drive-mappen eller start jobben på nytt.';
+        updatePlaylistItems(lastJobSnapshot.items);
+        if (lastJobSnapshot.saveMode === 'media') showDriveLinks(lastJobSnapshot.jobNumber);
+        return;
+      }
       progressTitle.textContent = 'Jobben finnes ikke lenger';
       progressDetail.textContent = 'Serveren har blitt restartet. Start jobben på nytt.';
       cancelButton.hidden = true;
