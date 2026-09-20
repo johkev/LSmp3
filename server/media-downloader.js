@@ -9,6 +9,7 @@ const mediaDirectory = path.resolve(process.env.MEDIA_DIR || '/mnt/media2/Lænsm
 const jobTimeout = Number(process.env.JOB_TIMEOUT) || 600000;
 const ffmpegThreads = Number(process.env.FFMPEG_THREADS) || 0;
 const concurrentFragments = Number(process.env.YTDLP_CONCURRENT_FRAGMENTS) || 8;
+const impersonate = process.env.YTDLP_IMPERSONATE || '';
 const defaultDeno = '/home/kevin/.config/spotdl/deno';
 const jsRuntime = process.env.JS_RUNTIME || (process.platform === 'linux' && require('node:fs').existsSync(defaultDeno) ? `deno:${defaultDeno}` : 'node');
 
@@ -30,6 +31,7 @@ function buildCommand({ url, format, quality, jobDirectory, speedMode }) {
 
   const outputTemplate = path.join(jobDirectory, '%(playlist_index&{} - |)s%(title)s.%(ext)s');
   const args = ['--yes-playlist', '--newline', '--max-filesize', '500M', '--js-runtimes', jsRuntime, '--concurrent-fragments', String(concurrentFragments), '--retries', '5', '--fragment-retries', '5'];
+  if (impersonate) args.push('--impersonate', impersonate);
   args.push('--postprocessor-args', `FFmpeg:-threads ${ffmpegThreads}`);
   if (speedMode !== 'fast') args.push('--embed-metadata', '--embed-thumbnail');
   args.push('--output', outputTemplate);
@@ -193,7 +195,24 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onLog, onItemProgress, onItemTitle, onPlaylistTitle, onProcess, onDirectory }) {
+async function createArchiveCopy(directory, archivePath) {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const files = entries.filter((entry) => entry.isFile()).map((entry) => path.join(directory, entry.name));
+  if (!files.length) throw new Error('Det finnes ingen ferdige filer i jobbmappe.');
+  await new Promise((resolve, reject) => {
+    const output = createWriteStream(archivePath);
+    const archive = new Archiver('zip', { zlib: { level: 6 } });
+    output.on('close', resolve);
+    output.on('error', reject);
+    archive.on('error', reject);
+    archive.pipe(output);
+    for (const file of files) archive.file(file, { name: path.basename(file) });
+    archive.finalize();
+  });
+  return archivePath;
+}
+
+async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onLog, onItemProgress, onItemError, onItemTitle, onPlaylistTitle, onProcess, onDirectory }) {
   const jobDirectory = saveMode === 'media'
     ? path.join(mediaDirectory, `jobb${jobNumber}`)
     : path.join(downloadsDirectory, jobId);
@@ -236,6 +255,7 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
           currentItem = Number(itemMatch[1]);
           onItemProgress(currentItem, 0, Number(itemMatch[2]));
         }
+        if (/\bERROR\b|HTTP Error 403|not available/i.test(trimmed) && currentItem) onItemError(currentItem, trimmed);
         const playlistMatch = trimmed.match(/Downloading playlist:\s*(.+)$/i);
         if (playlistMatch) onPlaylistTitle(playlistMatch[1].trim());
         const destinationMatch = trimmed.match(/Destination:\s*(.+)$/i);
@@ -319,3 +339,4 @@ async function cleanupDownloads() {
 }
 
 module.exports = { cleanupDownloads, downloadsDirectory, inspectMedia, mediaDirectory, removeJobFiles, runDownload, searchMedia };
+module.exports = { cleanupDownloads, createArchiveCopy, downloadsDirectory, inspectMedia, mediaDirectory, removeJobFiles, runDownload, searchMedia };

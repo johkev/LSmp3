@@ -39,7 +39,6 @@ const jobNumberElement = document.querySelector('#job-number');
 const playlistItems = document.querySelector('#playlist-items');
 const playlistOverview = document.querySelector('#playlist-overview');
 const playlistCount = document.querySelector('#playlist-count');
-const playlistEta = document.querySelector('#playlist-eta');
 const liveLog = document.querySelector('#live-log');
 const kevinTrigger = document.querySelector('#kevin-trigger');
 const kevinModal = document.querySelector('#kevin-modal');
@@ -69,6 +68,7 @@ let pollTimer;
 let pollFailures = 0;
 let cancellingJob = false;
 let lastJobSnapshot = null;
+let downloadEndpoint = null;
 let selectedMediaUrl = '';
 let progressSamples = [];
 let visualProgress = 0;
@@ -214,13 +214,6 @@ function updatePlaylistItems(items) {
   const currentProgress = items.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / items.length;
   progressSamples.push({ time: now, progress: currentProgress });
   progressSamples = progressSamples.filter((sample) => now - sample.time < 15000);
-  if (progressSamples.length > 1 && currentProgress > progressSamples[0].progress) {
-    const first = progressSamples[0];
-    const rate = (currentProgress - first.progress) / ((now - first.time) / 1000);
-    playlistEta.textContent = `Ca. ${formatEta((100 - currentProgress) / rate)} igjen`;
-  } else {
-    playlistEta.textContent = 'Beregner tid igjen...';
-  }
     for (const item of items) {
     const row = playlistItems.querySelector(`[data-index="${item.index}"]`);
     if (!row) continue;
@@ -236,11 +229,6 @@ function updatePlaylistItems(items) {
   }
 }
 
-function formatEta(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 60) return `${Math.max(1, Math.round(seconds || 1))} sek`;
-  return `${Math.floor(seconds / 60)} min`;
-}
-
 async function readJsonResponse(response, fallbackMessage) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -254,6 +242,7 @@ function resetProgress() {
   window.clearTimeout(pollTimer);
   currentJobId = null;
   lastJobSnapshot = null;
+    downloadEndpoint = null;
   pollFailures = 0;
   cancellingJob = false;
   progressPanel.hidden = true;
@@ -317,6 +306,11 @@ function showTransfer(transfer, job) {
   }
   mediaSummary.hidden = false;
   mediaTitle.textContent = job?.metadata?.title || 'Laster ned';
+  if (job?.status === 'completed' || transfer.percent >= 100) {
+    mediaTitle.textContent = job?.partial ? 'Delvis ferdig' : 'Filen er klar';
+    mediaMeta.textContent = `Ferdig · ${transfer.totalSize || transfer.downloaded}`;
+    return;
+  }
   mediaMeta.textContent = `${transfer.downloaded}${transfer.totalSize ? ` · totalt ${transfer.totalSize}` : ''} · ${transfer.speed}${transfer.eta ? ` · ETA ${transfer.eta}` : ''}`;
 }
 
@@ -359,7 +353,12 @@ async function pollJob(jobId) {
         progressTitle.textContent = lastJobSnapshot.partial ? 'Delvis ferdig' : 'Filen er klar';
         progressDetail.textContent = 'Serveren mistet jobbstatusen etter fullføring. Bruk Drive-mappen eller start jobben på nytt.';
         updatePlaylistItems(lastJobSnapshot.items);
-        if (lastJobSnapshot.saveMode === 'media') showDriveLinks(lastJobSnapshot.jobNumber);
+        if (lastJobSnapshot.saveMode === 'media') {
+          showDriveLinks(lastJobSnapshot.jobNumber);
+          downloadEndpoint = `/api/jobs/${jobId}/download?jobNumber=${lastJobSnapshot.jobNumber}`;
+          downloadButton.hidden = false;
+          downloadButton.disabled = false;
+        }
         return;
       }
       progressTitle.textContent = 'Jobben finnes ikke lenger';
@@ -370,10 +369,25 @@ async function pollJob(jobId) {
     if (!response.ok) throw new Error(job.error || 'Kunne ikke hente jobbstatus.');
     pollFailures = 0;
     lastJobSnapshot = job;
+    if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
+    else hideDriveLinks();
 
     if (job.status === 'failed') {
-      if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
+      if (job.saveMode === 'media') {
+        showDriveLinks(job.jobNumber);
+        downloadEndpoint = `/api/jobs/${job.jobId}/download?jobNumber=${job.jobNumber}`;
+        downloadButton.hidden = false;
+        downloadButton.disabled = false;
+      }
       throw new Error(job.error || 'Serveren klarte ikke å behandle filen.');
+    }
+
+    if (job.status === 'interrupted') {
+      if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
+      progressTitle.textContent = 'Jobben ble avbrutt';
+      progressDetail.textContent = job.error || 'Serveren ble restartet. Start jobben på nytt.';
+      cancelButton.hidden = true;
+      return;
     }
 
     const detail = job.phase || (job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.');
@@ -436,6 +450,12 @@ function showDriveLinks(jobNumber) {
   driveJobButton.href = `https://drive.lensmann.studio/files/LS%20NEDLASTEREN/jobb${jobNumber}/`;
 }
 
+function hideDriveLinks() {
+  driveRootButton.hidden = true;
+  driveJobButton.hidden = true;
+  driveJobButton.removeAttribute('href');
+}
+
 urlInput.addEventListener('input', setUrlState);
 formatInput.addEventListener('change', updateQualityOptions);
 
@@ -472,6 +492,7 @@ form.addEventListener('submit', async (event) => {
     const job = await readJsonResponse(response, 'Serveren returnerte ikke JSON. Sjekk at Apache peker på riktig backend.');
     if (!response.ok) throw new Error(job.error || 'Kunne ikke starte jobben.');
     currentJobId = job.jobId;
+    downloadEndpoint = `/api/jobs/${job.jobId}/download?jobNumber=${job.jobNumber}`;
     jobNumberElement.textContent = `JOB / ${String(job.jobNumber).padStart(4, '0')}`;
     if (job.saveMode === 'media') showDriveLinks(job.jobNumber);
     await pollJob(currentJobId);
@@ -486,7 +507,7 @@ downloadButton.addEventListener('click', async () => {
   downloadButton.disabled = true;
   downloadButton.firstChild.textContent = 'FORBEREDER NEDLASTING ';
   try {
-    const response = await fetch(`/api/jobs/${currentJobId}/download`);
+    const response = await fetch(downloadEndpoint || `/api/jobs/${currentJobId}/download`);
     if (!response.ok) {
       const message = await response.text();
       throw new Error(message || 'Filen er ikke klar ennå.');

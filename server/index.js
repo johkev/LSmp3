@@ -5,7 +5,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const express = require('express');
 const { cancelJob, createJob, getJob, getJobLogs, getJobRecord, getJobStats, shutdownJobs } = require('./job-store');
-const { cleanupDownloads, removeJobFiles, searchMedia } = require('./media-downloader');
+const { cleanupDownloads, createArchiveCopy, downloadsDirectory, mediaDirectory, removeJobFiles, searchMedia } = require('./media-downloader');
 const { addSystemLog, getSystemLogs } = require('./log-store');
 
 const app = express();
@@ -72,13 +72,15 @@ app.get('/api/system', async (request, response) => {
     const disk = await fs.statfs(mediaPath).catch(() => fs.statfs(publicDirectory));
     const diskTotal = Number(disk.blocks) * Number(disk.bsize);
     const diskFree = Number(disk.bavail) * Number(disk.bsize);
-    const versions = await Promise.all(['yt-dlp', 'spotdl', 'ffmpeg'].map(async (command) => {
+    const commands = { 'yt-dlp': ['yt-dlp'], spotdl: ['spotdl'], ffmpeg: ['ffmpeg', '/usr/bin/ffmpeg'] };
+    const versions = await Promise.all(Object.entries(commands).map(async ([command, candidates]) => {
+      for (const candidate of candidates) {
       try {
-        const { stdout, stderr } = await execFileAsync(command, ['--version'], { timeout: 5000 });
+        const { stdout, stderr } = await execFileAsync(candidate, ['--version'], { timeout: 5000 });
         return [command, (stdout || stderr).trim().split(/\r?\n/)[0]];
-      } catch (error) {
-        return [command, 'ikke tilgjengelig'];
+      } catch (error) { /* Try the next known executable path. */ }
       }
+      return [command, 'ikke tilgjengelig'];
     }));
     return response.json({
       cpuPercent: Math.round(cpuUsage * 100),
@@ -167,10 +169,16 @@ app.delete('/api/jobs/:id', (request, response) => {
 
 app.get('/api/jobs/:id/download', (request, response) => {
   const job = getJobRecord(request.params.id);
-  if (!job) return response.status(404).json({ error: 'Jobben finnes ikke.' });
-  if (job.status !== 'completed') {
+  if (!job) {
+    const jobNumber = String(request.query.jobNumber || '');
+    if (!/^\d+$/.test(jobNumber)) return response.status(404).type('text').send('Jobben finnes ikke lenger.');
+    return sendRecoveredMediaJob(response, jobNumber);
+  }
+  if (!['completed', 'failed', 'interrupted', 'cancelled'].includes(job.status)) {
     return response.status(409).type('text').send('Filen er ikke klar ennå. Vent til jobben er ferdig.');
   }
+
+  if (!job.outputFile && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber);
 
   return response.download(job.outputFile, job.filename, async (error) => {
     if (error) {
@@ -184,6 +192,23 @@ app.get('/api/jobs/:id/download', (request, response) => {
     }
   });
 });
+
+async function sendRecoveredMediaJob(response, jobNumber) {
+  const directory = path.join(mediaDirectory, `jobb${jobNumber}`);
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile()).map((entry) => path.join(directory, entry.name));
+    if (!files.length) return response.status(404).type('text').send('Ingen ferdige filer finnes i jobbmappen.');
+    if (files.length === 1) return response.download(files[0], path.basename(files[0]));
+    const archivePath = path.join(downloadsDirectory, `jobb${jobNumber}-resultat.zip`);
+    await createArchiveCopy(directory, archivePath);
+    return response.download(archivePath, path.basename(archivePath), () => {
+      fs.rm(archivePath, { force: true }).catch(() => {});
+    });
+  } catch (error) {
+    return response.status(500).type('text').send(`Kunne ikke hente jobbfilene: ${error.message}`);
+  }
+}
 
 app.use(express.static(publicDirectory));
 

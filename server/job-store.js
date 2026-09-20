@@ -1,5 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs/promises');
+const syncFs = require('node:fs');
+const path = require('node:path');
 const { removeJobFiles, runDownload } = require('./media-downloader');
 const { addSystemLog } = require('./log-store');
 
@@ -7,6 +9,47 @@ const jobs = new Map();
 const maxConcurrentJobs = Number(process.env.MAX_CONCURRENT_JOBS) || 5;
 let activeJobs = 0;
 let nextJobNumber = 1;
+let saveTimer;
+const stateFile = path.resolve(process.env.JOB_STATE_FILE || path.join(__dirname, '..', 'logs', 'jobs.json'));
+
+function saveState() {
+  try {
+    syncFs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    const records = [...jobs.values()].map((job) => ({
+      ...job,
+      process: undefined,
+      workerTimer: undefined
+    }));
+    syncFs.writeFileSync(stateFile, JSON.stringify(records), 'utf8');
+  } catch (error) {
+    console.error('[ERROR] Kunne ikke lagre jobbstatus', error.message);
+  }
+}
+
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveState();
+  }, 500);
+}
+
+function loadState() {
+  try {
+    const records = JSON.parse(syncFs.readFileSync(stateFile, 'utf8'));
+    for (const job of records) {
+      if (job.status === 'processing' || job.status === 'queued') {
+        job.status = 'interrupted';
+        job.phase = 'Avbrutt etter serverrestart';
+        job.error = 'Serveren ble restartet mens jobben kjørte.';
+      }
+      jobs.set(job.jobId, job);
+      nextJobNumber = Math.max(nextJobNumber, Number(job.jobNumber || 0) + 1);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.error('[ERROR] Kunne ikke lese jobbstatus', error.message);
+  }
+}
 
 function createJob({ url, format, quality, saveMode = 'temporary', speedMode = 'info' }) {
   const job = {
@@ -29,6 +72,7 @@ function createJob({ url, format, quality, saveMode = 'temporary', speedMode = '
   };
 
   jobs.set(job.jobId, job);
+  saveState();
   console.log(`[INFO] Job created ${job.jobId} (${job.status})`);
   processQueue();
   return publicJob(job);
@@ -51,6 +95,7 @@ function cancelJob(jobId) {
   job.status = 'cancelled';
   addLog(job, 'Jobb avbrutt av brukeren.');
   if (job.process) job.process.kill('SIGTERM');
+  saveState();
   return job;
 }
 
@@ -91,16 +136,18 @@ function processQueue() {
 
   runDownload({
     ...nextJob,
-    onProgress: (progress) => { nextJob.progress = progress; },
+    onProgress: (progress) => { nextJob.progress = progress; scheduleSave(); },
     onTransfer: (transfer) => {
       nextJob.transfer = transfer;
-      nextJob.progress = Math.max(nextJob.progress, transfer.percent);
+      if (nextJob.items.length === 0) nextJob.progress = Math.max(nextJob.progress, transfer.percent);
+      scheduleSave();
     },
     onMetadata: (metadata) => {
       nextJob.metadata = metadata;
       nextJob.phase = 'Laster ned';
       nextJob.items = (metadata.items || []).map((item) => ({ ...item, status: 'queued', progress: 0 }));
       addLog(nextJob, `Metadata mottatt: ${metadata.title}`);
+      scheduleSave();
     },
     onPlaylistTitle: (title) => {
       if (!nextJob.metadata) nextJob.metadata = { title, playlistTitle: title, itemCount: nextJob.items.length || 1, items: [], isPlaylist: true };
@@ -108,11 +155,13 @@ function processQueue() {
       nextJob.metadata.playlistTitle = title;
       nextJob.metadata.isPlaylist = true;
       addLog(nextJob, `Playlist: ${title}`);
+      scheduleSave();
     },
     onItemTitle: (index, title) => {
       const item = nextJob.items.find((entry) => entry.index === index);
       if (item) item.title = title;
       else nextJob.items.push({ index, title, status: 'processing', progress: 0, transfer: null });
+      scheduleSave();
     },
     onItemProgress: (index, progress, total, transfer) => {
       const item = nextJob.items.find((entry) => entry.index === index);
@@ -120,8 +169,22 @@ function processQueue() {
         item.status = progress >= 100 ? 'completed' : 'processing';
         item.progress = progress;
         if (transfer) item.transfer = transfer;
+        if (nextJob.items.length > 0) {
+          nextJob.progress = Math.round(nextJob.items.reduce((sum, entry) => sum + (Number(entry.progress) || 0), 0) / nextJob.items.length);
+        }
+        scheduleSave();
       }
-      if (!item && total) nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress, transfer: transfer || null });
+      if (!item && total) {
+        nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress, transfer: transfer || null });
+        nextJob.progress = Math.round(nextJob.items.reduce((sum, entry) => sum + (Number(entry.progress) || 0), 0) / nextJob.items.length);
+      }
+    },
+    onItemError: (index, message) => {
+      const item = nextJob.items.find((entry) => entry.index === index);
+      if (item) {
+        item.status = 'failed';
+        item.error = message;
+      }
     },
     onProcess: (process) => {
       nextJob.process = process;
@@ -138,6 +201,7 @@ function processQueue() {
       nextJob.status = 'completed';
       nextJob.outputFile = outputFile;
       nextJob.filename = outputFile.split(/[\\/]/).pop();
+      saveState();
       addLog(nextJob, partial ? `Delvis ferdig: ${errorMessage || 'Noen elementer kunne ikke lastes ned.'}` : 'Nedlasting og behandling fullført.');
       addSystemLog('INFO', `Jobb ${nextJob.jobNumber} fullført`);
       console.log(`[INFO] Job completed ${nextJob.jobId}`);
@@ -161,6 +225,7 @@ function processQueue() {
         else await removeJobFiles(nextJob.jobId);
       }
       console.error(`[ERROR] Job failed ${nextJob.jobId}: ${error.message}`);
+      saveState();
     })
     .finally(() => {
       activeJobs -= 1;
@@ -191,6 +256,8 @@ function getJobStats() {
   }
   return { active: processing, queued, total: jobs.size, maxConcurrent: maxConcurrentJobs };
 }
+
+loadState();
 
 function shutdownJobs() {
   for (const job of jobs.values()) {

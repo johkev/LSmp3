@@ -101,6 +101,8 @@ Arbeidsmodus kan velges per jobb. `Informasjonsmodus` henter metadata og thumbna
 
 Yt-dlp bruker `YTDLP_CONCURRENT_FRAGMENTS` fragmenter samtidig. FFmpeg bruker `FFMPEG_THREADS`; `0` betyr automatisk CPU-bruk. Disse kan justeres i `.env`, men for mange samtidige jobber og for mange tråder kan gjøre serveren tregere totalt.
 
+Hvis YouTube gir `HTTP 403`, kan Debian bruke `YTDLP_IMPERSONATE=chrome`. Dette krever at yt-dlp-miljøet har `curl_cffi`. Innstillingen etterligner nettleserens HTTP-fingeravtrykk, men omgår ikke DRM, private videoer eller tilgangskontroller.
+
 YouTube-spillelister kan behandles som flere filer. Statuspanelet viser tilgjengelig tittel, thumbnail, antall elementer, samlet varighet og estimert størrelse. Når en jobb inneholder flere filer, pakkes resultatet automatisk som én ZIP-fil før nedlasting.
 
 Søkefeltet tilbyr YouTube og SoundCloud. Spotify og YouTube Music er ikke søkekilder, men Spotify-lenker kan fortsatt limes inn direkte og behandles av spotDL. YouTube-resultater får en direkte `watch`-URL og fallback-thumbnail når søket bare returnerer en video-ID.
