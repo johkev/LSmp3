@@ -82,7 +82,7 @@ function setUrlState() {
 
 function setProgress(value, title, detail) {
   progressBar.style.width = `${value}%`;
-  progressValue.textContent = `${value}%`;
+  progressValue.textContent = `${Math.round(Number(value) || 0)}%`;
   progressTitle.textContent = title;
   progressDetail.textContent = detail;
 }
@@ -185,7 +185,7 @@ function renderPlaylistItems(items) {
     const row = document.createElement('div');
     row.className = 'playlist-item';
     row.dataset.index = item.index;
-    row.innerHTML = '<span class="playlist-item-state">Venter</span><span class="playlist-item-title"></span><span class="playlist-item-progress">Ikke startet</span>';
+    row.innerHTML = '<span class="playlist-item-state"></span><span class="playlist-item-main"><span class="playlist-item-title"></span><span class="playlist-item-track"><span></span></span></span><span class="playlist-item-progress">Venter</span>';
     row.querySelector('.playlist-item-title').textContent = item.title || 'Uten tittel';
     playlistItems.append(row);
   }
@@ -207,12 +207,16 @@ function updatePlaylistItems(items) {
   } else {
     playlistEta.textContent = 'Beregner tid igjen...';
   }
-  for (const item of items || []) {
+    for (const item of items) {
     const row = playlistItems.querySelector(`[data-index="${item.index}"]`);
     if (!row) continue;
-    const statusText = item.status === 'completed' ? 'Ferdig' : item.status === 'processing' ? 'Laster ned' : item.status === 'failed' ? 'Feilet' : 'Venter';
-    row.querySelector('.playlist-item-progress').textContent = statusText;
-    row.querySelector('.playlist-item-state').textContent = statusText;
+      const statusText = item.status === 'completed' ? 'Ferdig' : item.status === 'processing' ? 'Laster ned' : item.status === 'failed' ? 'Feilet' : 'Venter';
+      const transfer = item.transfer;
+      row.querySelector('.playlist-item-progress').textContent = transfer
+        ? `${transfer.downloaded} · ${transfer.speed}${transfer.eta ? ` · ${transfer.eta}` : ''}`
+        : statusText;
+      row.querySelector('.playlist-item-state').textContent = statusText;
+      row.querySelector('.playlist-item-track span').style.width = `${Math.round(Number(item.progress) || 0)}%`;
     row.classList.toggle('is-complete', item.status === 'completed');
     row.classList.toggle('is-failed', item.status === 'failed');
   }

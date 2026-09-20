@@ -233,7 +233,7 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
         }
         const progress = parseProgress(line);
         if (progress !== null) onProgress(Math.min(progress, 95));
-        if (progress !== null && currentItem) onItemProgress(currentItem, progress, null);
+        if (progress !== null && currentItem) onItemProgress(currentItem, progress, null, parseTransferLine(line));
       }
     });
     child.stderr.on('data', (chunk) => {

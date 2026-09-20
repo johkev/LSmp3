@@ -102,9 +102,13 @@ function processQueue() {
       nextJob.items = (metadata.items || []).map((item) => ({ ...item, status: 'queued', progress: 0 }));
       addLog(nextJob, `Metadata mottatt: ${metadata.title}`);
     },
-    onItemProgress: (index, progress, total) => {
+    onItemProgress: (index, progress, total, transfer) => {
       const item = nextJob.items.find((entry) => entry.index === index);
-      if (item) { item.status = progress >= 100 ? 'completed' : 'processing'; item.progress = progress; }
+      if (item) {
+        item.status = progress >= 100 ? 'completed' : 'processing';
+        item.progress = progress;
+        if (transfer) item.transfer = transfer;
+      }
       if (!item && total) nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress });
     },
     onProcess: (process) => {
