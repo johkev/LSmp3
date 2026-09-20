@@ -182,6 +182,16 @@ app.get('/api/jobs/:id/download', (request, response) => {
 
   if (!job.outputFile && job.saveMode === 'media') return sendRecoveredMediaJob(response, job.jobNumber);
 
+  if (job.saveMode === 'media') {
+    return fs.access(job.outputFile)
+      .then(() => sendJobFile(response, job))
+      .catch(() => sendRecoveredMediaJob(response, job.jobNumber));
+  }
+
+  return sendJobFile(response, job);
+});
+
+function sendJobFile(response, job) {
   return response.download(job.outputFile, job.filename, async (error) => {
     if (error) {
       if (job.saveMode === 'media') {
@@ -197,7 +207,7 @@ app.get('/api/jobs/:id/download', (request, response) => {
       job.outputFile = null;
     }
   });
-});
+}
 
 async function sendRecoveredMediaJob(response, jobNumber) {
   const directory = path.join(mediaDirectory, `jobb${jobNumber}`);

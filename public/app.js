@@ -75,6 +75,7 @@ let visualProgress = 0;
 let visualProgressTimer;
 let currentLogs = [];
 let selectedLogSource = 'app';
+let diagnosticsTimer;
 
 function setUrlState() {
   clearButton.hidden = urlInput.value.length === 0;
@@ -557,38 +558,38 @@ async function cancelCurrentJob() {
 
 cancelButton.addEventListener('click', cancelCurrentJob);
 
-diagnosticsButton.addEventListener('click', async () => {
-  logsPanel.hidden = false;
+async function refreshDiagnostics() {
+  if (logsPanel.hidden) return;
   loadSystemMonitor();
-  if (!currentJobId) {
-    logsStatus.textContent = 'Ingen aktiv jobb.';
-    try {
-      const response = await fetch('/api/logs');
-      const payload = await readJsonResponse(response, 'Kunne ikke hente teknisk logg.');
-      currentLogs = payload.logs;
-      renderSelectedLogs();
-    } catch (error) {
-      logsContent.textContent = error.message;
-    }
-    return;
-  }
   try {
-    const statusResponse = await fetch(`/api/jobs/${currentJobId}?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
-    const response = await fetch(`/api/jobs/${currentJobId}/logs?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
-    const status = await readJsonResponse(statusResponse, 'Kunne ikke lese jobbstatus.');
-    const payload = await readJsonResponse(response, 'Kunne ikke lese jobbloggen.');
-    logsStatus.textContent = `Jobb ${status.jobNumber ?? currentJobId} · ${status.status || 'ukjent status'} · ${Math.round(Number(status.progress) || 0)}% · ${status.format || 'ukjent format'}`;
+    if (currentJobId) {
+      const statusResponse = await fetch(`/api/jobs/${currentJobId}?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      const response = await fetch(`/api/jobs/${currentJobId}/logs?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (statusResponse.ok && response.ok) {
+        const status = await readJsonResponse(statusResponse, 'Kunne ikke lese jobbstatus.');
+        const payload = await readJsonResponse(response, 'Kunne ikke lese jobbloggen.');
+        logsStatus.textContent = `Jobb ${status.jobNumber ?? currentJobId} · ${status.status || 'ukjent status'} · ${Math.round(Number(status.progress) || 0)}% · ${status.format || 'ukjent format'}`;
+        currentLogs = payload.logs;
+        renderSelectedLogs();
+        return;
+      }
+    }
+    const response = await fetch(`/api/logs?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const payload = await readJsonResponse(response, 'Kunne ikke hente teknisk logg.');
+    logsStatus.textContent = currentJobId ? 'Jobbstatus utilgjengelig · viser systemlogg' : 'Ingen aktiv jobb · viser systemlogg';
     currentLogs = payload.logs;
     renderSelectedLogs();
-  } catch {
-    try {
-      const response = await fetch('/api/logs');
-      const payload = await readJsonResponse(response, 'Kunne ikke hente teknisk logg.');
-      logsContent.textContent = payload.logs.map((entry) => `[${entry.time}] ${entry.level}: ${entry.message}`).join('\n') || 'Ingen systemlogger ennå.';
-    } catch {
-      logsContent.textContent = 'Kunne ikke hente teknisk logg.';
-    }
+  } catch (error) {
+    logsStatus.textContent = 'Midlertidig feil · prøver igjen...';
+    logsContent.textContent = error.message;
   }
+}
+
+diagnosticsButton.addEventListener('click', async () => {
+  logsPanel.hidden = false;
+  window.clearInterval(diagnosticsTimer);
+  await refreshDiagnostics();
+  diagnosticsTimer = window.setInterval(refreshDiagnostics, 1000);
 });
 
 async function loadSystemMonitor() {
@@ -609,7 +610,7 @@ function renderSelectedLogs() {
   logsContent.textContent = logs.map((entry) => `[${entry.time}] ${entry.message}`).join('\n') || 'Ingen logger i denne fanen ennå.';
 }
 
-logsClose.addEventListener('click', () => { logsPanel.hidden = true; });
+logsClose.addEventListener('click', () => { logsPanel.hidden = true; window.clearInterval(diagnosticsTimer); });
 logTabs.forEach((tab) => tab.addEventListener('click', () => {
   selectedLogSource = tab.dataset.logSource;
   logTabs.forEach((item) => item.classList.toggle('is-active', item === tab));
@@ -627,6 +628,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     kevinModal.hidden = true;
     logsPanel.hidden = true;
+    window.clearInterval(diagnosticsTimer);
   }
 });
 urlMode.addEventListener('click', () => setInputMode('url'));
