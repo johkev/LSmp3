@@ -249,8 +249,7 @@ function resetProgress() {
   progressPanel.hidden = true;
   downloadButton.hidden = true;
   downloadButton.disabled = true;
-  driveRootButton.hidden = true;
-  driveJobButton.hidden = true;
+  hideDriveLinks();
   cancelButton.hidden = true;
   mediaSummary.hidden = true;
   mediaThumbnail.removeAttribute('src');
@@ -564,7 +563,7 @@ async function refreshDiagnostics() {
   try {
     if (currentJobId) {
       const statusResponse = await fetch(`/api/jobs/${currentJobId}?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
-      const response = await fetch(`/api/jobs/${currentJobId}/logs?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      const response = await fetch(`/api/jobs/${currentJobId}/logs?source=${selectedLogSource}&t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
       if (statusResponse.ok && response.ok) {
         const status = await readJsonResponse(statusResponse, 'Kunne ikke lese jobbstatus.');
         const payload = await readJsonResponse(response, 'Kunne ikke lese jobbloggen.');
@@ -574,7 +573,7 @@ async function refreshDiagnostics() {
         return;
       }
     }
-    const response = await fetch(`/api/logs?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const response = await fetch(`/api/logs?source=${selectedLogSource}&t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
     const payload = await readJsonResponse(response, 'Kunne ikke hente teknisk logg.');
     logsStatus.textContent = currentJobId ? 'Jobbstatus utilgjengelig · viser systemlogg' : 'Ingen aktiv jobb · viser systemlogg';
     currentLogs = payload.logs;
@@ -614,7 +613,7 @@ logsClose.addEventListener('click', () => { logsPanel.hidden = true; window.clea
 logTabs.forEach((tab) => tab.addEventListener('click', () => {
   selectedLogSource = tab.dataset.logSource;
   logTabs.forEach((item) => item.classList.toggle('is-active', item === tab));
-  renderSelectedLogs();
+  refreshDiagnostics();
 }));
 kevinTrigger.addEventListener('click', () => {
   kevinModal.hidden = false;

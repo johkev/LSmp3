@@ -27,7 +27,10 @@ function addSystemLog(level, message, source = 'app') {
   }
 }
 
-function getSystemLogs() { return [...systemLogs]; }
+function getSystemLogs({ source, limit = 80 } = {}) {
+  const filtered = source ? systemLogs.filter((entry) => entry.source === source) : systemLogs;
+  return filtered.slice(-limit);
+}
 
 loadLogs();
 

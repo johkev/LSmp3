@@ -54,7 +54,8 @@ app.get('/api/search', async (request, response) => {
 
 app.get('/api/logs', (request, response) => {
   response.set('Cache-Control', 'no-store');
-  return response.json({ logs: getSystemLogs() });
+  const source = ['app', 'ffmpeg', 'ytdlp'].includes(request.query.source) ? request.query.source : undefined;
+  return response.json({ logs: getSystemLogs({ source, limit: 80 }) });
 });
 
 app.get('/api/system', async (request, response) => {
@@ -156,9 +157,10 @@ app.get('/api/jobs/:id', (request, response) => {
 });
 
 app.get('/api/jobs/:id/logs', (request, response) => {
-  const logs = getJobLogs(request.params.id);
+  const source = ['app', 'ffmpeg', 'ytdlp'].includes(request.query.source) ? request.query.source : undefined;
+  const logs = getJobLogs(request.params.id, { source, limit: 80 });
   if (!logs) return response.status(404).json({ error: 'Jobben finnes ikke.' });
-  return response.json({ jobId: request.params.id, logs: [...getSystemLogs(), ...logs] });
+  return response.json({ jobId: request.params.id, logs });
 });
 
 app.delete('/api/jobs/:id', (request, response) => {

@@ -178,6 +178,11 @@ function processQueue() {
       scheduleSave();
     },
     onItemProgress: (index, progress, total, transfer) => {
+      const previousItems = nextJob.items.filter((entry) => entry.index < index && entry.status === 'processing');
+      for (const previous of previousItems) {
+        previous.status = 'completed';
+        previous.progress = 100;
+      }
       const item = nextJob.items.find((entry) => entry.index === index);
       if (item) {
         item.status = progress >= 100 ? 'completed' : 'processing';
@@ -190,6 +195,8 @@ function processQueue() {
       }
       if (!item && total) {
         nextJob.items.push({ index, title: `Element ${index}`, status: 'processing', progress, transfer: transfer || null });
+      }
+      if (nextJob.items.length > 0) {
         nextJob.progress = Math.round(nextJob.items.reduce((sum, entry) => sum + (Number(entry.progress) || 0), 0) / nextJob.items.length);
       }
     },
@@ -209,6 +216,11 @@ function processQueue() {
   })
     .then(async ({ outputFile, partial, errorMessage }) => {
       nextJob.progress = 100;
+      nextJob.items = nextJob.items.map((item) => ({
+        ...item,
+        status: item.status === 'failed' ? 'failed' : 'completed',
+        progress: item.status === 'failed' ? item.progress : 100
+      }));
       nextJob.partial = partial;
       nextJob.partialError = errorMessage;
       nextJob.phase = partial ? 'Delvis ferdig' : 'Ferdig';
@@ -256,9 +268,11 @@ function addLog(job, message, source = 'app') {
   if (job.logs.length > 200) job.logs.shift();
 }
 
-function getJobLogs(jobId) {
+function getJobLogs(jobId, { source, limit = 80 } = {}) {
   const job = jobs.get(jobId);
-  return job ? job.logs || [] : null;
+  if (!job) return null;
+  const logs = source ? (job.logs || []).filter((entry) => entry.source === source) : (job.logs || []);
+  return logs.slice(-limit);
 }
 
 function getJobStats() {
