@@ -20,6 +20,7 @@ function createJob({ url, format, quality, saveMode = 'temporary', speedMode = '
     status: 'queued',
     progress: 0,
     phase: 'Venter i kø',
+    transfer: null,
     metadata: null,
     items: [],
     createdAt: new Date().toISOString(),
@@ -59,6 +60,7 @@ function publicJob(job) {
     status: job.status,
     progress: job.progress,
     phase: job.phase,
+    ...(job.transfer ? { transfer: job.transfer } : {}),
     format: job.format,
     speedMode: job.speedMode,
     saveMode: job.saveMode,
@@ -66,6 +68,7 @@ function publicJob(job) {
     ...(job.items.length ? { items: job.items } : {}),
     ...(job.filename ? { filename: job.filename } : {}),
     ...(job.error ? { error: job.error } : {}),
+    ...(job.partial ? { partial: true, partialError: job.partialError } : {}),
     ...(job.logs ? { logCount: job.logs.length } : {}),
     createdAt: job.createdAt
   };
@@ -86,6 +89,10 @@ function processQueue() {
   runDownload({
     ...nextJob,
     onProgress: (progress) => { nextJob.progress = progress; },
+    onTransfer: (transfer) => {
+      nextJob.transfer = transfer;
+      nextJob.progress = Math.max(nextJob.progress, transfer.percent);
+    },
     onMetadata: (metadata) => {
       nextJob.metadata = metadata;
       nextJob.phase = 'Laster ned';
@@ -102,15 +109,17 @@ function processQueue() {
       if (nextJob.cancelRequested) process.kill('SIGTERM');
     },
     onDirectory: (directory) => { nextJob.directory = directory; },
-    onLog: (message) => addLog(nextJob, message)
+    onLog: (message, source) => addLog(nextJob, message, source)
   })
-    .then(async (outputFile) => {
+    .then(async ({ outputFile, partial, errorMessage }) => {
       nextJob.progress = 100;
-      nextJob.phase = 'Ferdig';
+      nextJob.partial = partial;
+      nextJob.partialError = errorMessage;
+      nextJob.phase = partial ? 'Delvis ferdig' : 'Ferdig';
       nextJob.status = 'completed';
       nextJob.outputFile = outputFile;
       nextJob.filename = outputFile.split(/[\\/]/).pop();
-      addLog(nextJob, 'Nedlasting og behandling fullført.');
+      addLog(nextJob, partial ? `Delvis ferdig: ${errorMessage || 'Noen elementer kunne ikke lastes ned.'}` : 'Nedlasting og behandling fullført.');
       addSystemLog('INFO', `Jobb ${nextJob.jobNumber} fullført`);
       console.log(`[INFO] Job completed ${nextJob.jobId}`);
     })
@@ -136,15 +145,25 @@ function processQueue() {
     });
 }
 
-function addLog(job, message) {
+function addLog(job, message, source = 'app') {
   if (!job.logs) job.logs = [];
-  job.logs.push({ time: new Date().toISOString(), message: String(message).slice(0, 500) });
+  job.logs.push({ time: new Date().toISOString(), source, message: String(message).slice(0, 500) });
   if (job.logs.length > 200) job.logs.shift();
 }
 
 function getJobLogs(jobId) {
   const job = jobs.get(jobId);
   return job ? job.logs || [] : null;
+}
+
+function getJobStats() {
+  let queued = 0;
+  let processing = 0;
+  for (const job of jobs.values()) {
+    if (job.status === 'queued') queued += 1;
+    if (job.status === 'processing') processing += 1;
+  }
+  return { active: processing, queued, total: jobs.size, maxConcurrent: maxConcurrentJobs };
 }
 
 function shutdownJobs() {
@@ -157,4 +176,4 @@ function shutdownJobs() {
   }
 }
 
-module.exports = { cancelJob, createJob, getJob, getJobLogs, getJobRecord, shutdownJobs };
+module.exports = { cancelJob, createJob, getJob, getJobLogs, getJobRecord, getJobStats, shutdownJobs };

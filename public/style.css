@@ -72,6 +72,10 @@ body::before {
 .brand strong { font-family: "Sora", sans-serif; font-size: 13px; letter-spacing: .04em; }
 .brand small, .eyebrow, .job-number, .status-chip, .footer { font-family: "DM Mono", monospace; font-size: 10px; letter-spacing: .08em; }
 .brand small { margin-top: 2px; color: rgba(244, 241, 235, .66); font-size: 8px; letter-spacing: .13em; }
+.topbar-actions { display: flex; align-items: center; gap: 18px; }
+.drive-nav { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; color: #bff5e7; border: 1px solid rgba(63, 194, 163, .55); border-radius: 999px; background: rgba(63, 194, 163, .12); box-shadow: 0 0 0 3px rgba(63, 194, 163, .04); font: 10px "DM Mono", monospace; letter-spacing: .08em; text-decoration: none; transition: color .15s ease, background .15s ease, border-color .15s ease, transform .15s ease; }
+.drive-nav-icon { display: grid; width: 18px; height: 18px; place-items: center; border-radius: 50%; color: #10211d; background: var(--accent); font-size: 14px; line-height: 1; }
+.drive-nav:hover { color: #10211d; border-color: var(--accent); background: var(--accent); transform: translateY(-1px); }
 .status-chip { color: var(--text-light); text-decoration: none; opacity: .9; }
 .status-chip span { margin-left: 8px; color: var(--accent); font-size: 16px; }
 .status-chip:hover { opacity: 1; }
@@ -160,6 +164,11 @@ select { cursor: pointer; font-size: 1rem; }
 .media-summary img { width: 132px; height: 82px; object-fit: cover; border-radius: var(--radius-sm); background: var(--surface-2); }
 .media-summary-copy h3 { margin: 0 0 7px; overflow: hidden; font-family: "Sora", sans-serif; font-size: 1rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .media-summary-copy p { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
+.playlist-overview { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; margin: -8px 0 14px; padding: 10px 12px; border-left: 3px solid var(--accent); background: rgba(63, 194, 163, .08); font-size: .78rem; }
+.playlist-overview[hidden] { display: none; }
+.playlist-overview strong { color: #16735b; white-space: nowrap; }
+.playlist-overview span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.playlist-overview span:last-child { font: 10px "DM Mono", monospace; white-space: nowrap; }
 .playlist-items { display: grid; gap: 6px; max-height: 220px; margin: -8px 0 22px; overflow: auto; }
 .playlist-items[hidden] { display: none; }
 .playlist-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border-light); border-radius: 8px; color: var(--muted); background: rgba(255, 255, 255, .3); font-size: .78rem; }
@@ -176,6 +185,10 @@ select { cursor: pointer; font-size: 1rem; }
 .progress-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cancel-button { min-height: 42px; padding: 0 16px; border: 1px solid rgba(140, 45, 29, .3); border-radius: 999px; color: #8c2d1d; background: transparent; font: 10px "DM Mono", monospace; cursor: pointer; }
 .cancel-button:hover { color: #fff; background: #8c2d1d; }
+.drive-button { display: inline-flex; align-items: center; min-height: 42px; padding: 0 15px; border: 1px solid rgba(63, 194, 163, .35); border-radius: 999px; color: #16735b; background: rgba(63, 194, 163, .1); font: 10px "DM Mono", monospace; text-decoration: none; }
+.drive-button:hover { color: #10211d; background: var(--accent); }
+.drive-button--job { color: #8c5c32; border-color: rgba(191, 153, 107, .45); background: rgba(191, 153, 107, .12); }
+.drive-button--job:hover { color: #241b13; background: var(--brand); }
 .footer { display: flex; justify-content: space-between; gap: 20px; padding: 18px 0 22px; color: rgba(244, 241, 235, .66); border-top: 1px solid var(--border-dark); }
 .diagnostics-button { border: 0; padding: 0; color: rgba(244, 241, 235, .28); background: transparent; font: 10px "DM Mono", monospace; letter-spacing: .08em; cursor: pointer; }
 .diagnostics-button:hover { color: var(--accent); }
@@ -195,6 +208,14 @@ select { cursor: pointer; font-size: 1rem; }
 .logs-close { border: 0; color: var(--text-light); background: transparent; font-size: 24px; cursor: pointer; }
 .logs-panel pre { max-height: 300px; margin: 0; overflow: auto; padding: 14px; color: #bde8dc; background: #09100e; font: 11px/1.55 "DM Mono", monospace; white-space: pre-wrap; word-break: break-word; }
 .logs-status { margin: -5px 0 12px; color: #9fdcca; font: 11px "DM Mono", monospace; }
+.log-tabs { display: flex; gap: 4px; margin-bottom: 10px; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, .05); }
+.log-tab { border: 0; border-radius: 999px; padding: 7px 10px; color: rgba(244, 241, 235, .55); background: transparent; font: 10px "DM Mono", monospace; cursor: pointer; }
+.log-tab.is-active { color: #101815; background: var(--accent); }
+.system-monitor { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.system-monitor[hidden] { display: none; }
+.system-monitor div { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid rgba(63, 194, 163, .16); border-radius: 8px; background: rgba(255, 255, 255, .035); }
+.system-monitor strong { color: rgba(244, 241, 235, .58); font: 10px "DM Mono", monospace; letter-spacing: .08em; }
+.system-monitor span { color: #bde8dc; font-size: 12px; }
 
 @media (max-width: 640px) {
   .site-shell { width: 94%; }
@@ -202,6 +223,9 @@ select { cursor: pointer; font-size: 1rem; }
 
   .status-chip { font-size: 0; }
   .status-chip span { margin-left: 0; font-size: 18px; }
+  .topbar-actions { gap: 10px; }
+  .drive-nav { min-height: 30px; padding: 0 9px; font-size: 8px; }
+  .drive-nav-icon { width: 16px; height: 16px; font-size: 12px; }
   main { padding: 48px 0 40px; }
   h1 { font-size: clamp(2.6rem, 14vw, 4.2rem); }
   .intro { font-size: .98rem; }
@@ -217,6 +241,8 @@ select { cursor: pointer; font-size: 1rem; }
   .media-summary { grid-template-columns: 92px 1fr; gap: 12px; }
   .media-summary img { width: 92px; height: 68px; }
   .media-summary-copy h3 { font-size: .9rem; }
+  .playlist-overview { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .playlist-overview span:last-child { grid-column: 1 / -1; }
   .footer { flex-direction: column; line-height: 1.6; }
   .diagnostics-button { align-self: flex-start; }
 }

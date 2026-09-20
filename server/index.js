@@ -1,6 +1,10 @@
+const os = require('node:os');
 const path = require('node:path');
+const fs = require('node:fs/promises');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const express = require('express');
-const { cancelJob, createJob, getJob, getJobLogs, getJobRecord, shutdownJobs } = require('./job-store');
+const { cancelJob, createJob, getJob, getJobLogs, getJobRecord, getJobStats, shutdownJobs } = require('./job-store');
 const { cleanupDownloads, removeJobFiles, searchMedia } = require('./media-downloader');
 const { addSystemLog, getSystemLogs } = require('./log-store');
 
@@ -8,6 +12,8 @@ const app = express();
 const port = Number(process.env.PORT) || 3002;
 const host = process.env.HOST || '127.0.0.1';
 const publicDirectory = path.join(__dirname, '..', 'public');
+const execFileAsync = promisify(execFile);
+let previousCpu = os.cpus();
 
 function normalizeMediaUrl(value) {
   const parsedUrl = new URL(value);
@@ -47,6 +53,46 @@ app.get('/api/search', async (request, response) => {
 
 app.get('/api/logs', (request, response) => {
   return response.json({ logs: getSystemLogs() });
+});
+
+app.get('/api/system', async (request, response) => {
+  try {
+    const currentCpu = os.cpus();
+    const cpuUsage = currentCpu.reduce((total, cpu, index) => {
+      const before = previousCpu[index]?.times || cpu.times;
+      const beforeTotal = Object.values(before).reduce((sum, value) => sum + value, 0);
+      const currentTotal = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
+      return total + (currentTotal > beforeTotal ? 1 - ((cpu.times.idle - before.idle) / (currentTotal - beforeTotal)) : 0);
+    }, 0) / currentCpu.length;
+    previousCpu = currentCpu;
+    const memoryUsed = os.totalmem() - os.freemem();
+    const mediaPath = process.env.MEDIA_DIR || '/mnt/media2/Lænsmann Studio';
+    const disk = await fs.statfs(mediaPath).catch(() => fs.statfs(publicDirectory));
+    const diskTotal = Number(disk.blocks) * Number(disk.bsize);
+    const diskFree = Number(disk.bavail) * Number(disk.bsize);
+    const versions = await Promise.all(['yt-dlp', 'spotdl', 'ffmpeg'].map(async (command) => {
+      try {
+        const { stdout, stderr } = await execFileAsync(command, ['--version'], { timeout: 5000 });
+        return [command, (stdout || stderr).trim().split(/\r?\n/)[0]];
+      } catch (error) {
+        return [command, 'ikke tilgjengelig'];
+      }
+    }));
+    return response.json({
+      cpuPercent: Math.round(cpuUsage * 100),
+      memoryPercent: Math.round((memoryUsed / os.totalmem()) * 100),
+      memoryUsed,
+      memoryTotal: os.totalmem(),
+      diskFree,
+      diskTotal,
+      jobs: getJobStats(),
+      versions: Object.fromEntries(versions),
+      uptime: os.uptime()
+    });
+  } catch (error) {
+    addSystemLog('ERROR', `Systemmonitor: ${error.message}`);
+    return response.status(500).json({ error: 'Kunne ikke lese serverstatus.' });
+  }
 });
 
 app.post('/api/jobs', (request, response) => {
@@ -123,7 +169,7 @@ app.get('/api/jobs/:id/download', (request, response) => {
 
   return response.download(job.outputFile, job.filename, async (error) => {
     if (error) {
-      if (!response.headersSent) response.status(500).json({ error: 'Kunne ikke sende filen.' });
+      if (!response.headersSent) response.status(500).type('text').send('Kunne ikke sende filen. Prøv igjen.');
       return;
     }
     if (job.saveMode === 'temporary') {

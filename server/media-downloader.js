@@ -189,7 +189,7 @@ async function createArchive(jobDirectory, files) {
   return archivePath;
 }
 
-async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onMetadata, onLog, onItemProgress, onProcess, onDirectory }) {
+async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, speedMode, onProgress, onTransfer, onMetadata, onLog, onItemProgress, onProcess, onDirectory }) {
   const jobDirectory = saveMode === 'media'
     ? path.join(mediaDirectory, `jobb${jobNumber}`)
     : path.join(downloadsDirectory, jobId);
@@ -215,15 +215,17 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
       finish(new Error('Jobben tok for lang tid.'));
     }, jobTimeout);
 
-    function finish(error, outputFile) {
+    function finish(error, outputFile, details = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      error ? reject(error) : resolve(outputFile);
+      error ? reject(error) : resolve({ outputFile, ...details });
     }
 
     child.stdout.on('data', (chunk) => {
       for (const line of chunk.toString().split(/\r?\n/)) {
+        if (line.trim()) onLog(line.trim(), 'ytdlp');
+        parseTransfer(line, onTransfer);
         const itemMatch = line.match(/Downloading item (\d+) of (\d+)/i);
         if (itemMatch) {
           currentItem = Number(itemMatch[1]);
@@ -237,21 +239,42 @@ async function runDownload({ jobId, jobNumber, url, format, quality, saveMode, s
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
       stderr += text;
-      for (const line of text.split(/\r?\n/).filter(Boolean)) onLog(line.slice(0, 500));
+      for (const line of text.split(/\r?\n/).filter(Boolean)) {
+        parseTransfer(line, onTransfer);
+        onLog(line.slice(0, 500), /ffmpeg/i.test(line) ? 'ffmpeg' : 'ytdlp');
+      }
     });
     child.on('error', (error) => finish(error.code === 'ENOENT' ? new Error(`${command} er ikke installert på serveren.`) : error));
     child.on('close', async (code) => {
-      if (code !== 0) {
-        finish(new Error(`Downloader feilet: ${stderr.trim().split('\n').pop() || `exit code ${code}`}`));
-        return;
-      }
       try {
         const files = await findOutputFiles(jobDirectory);
-        finish(null, files.length === 1 ? files[0] : await createArchive(jobDirectory, files));
+        const outputFile = metadata.isPlaylist || files.length > 1
+          ? await createArchive(jobDirectory, files)
+          : files[0];
+        const lastError = stderr.trim().split('\n').filter(Boolean).pop() || '';
+        finish(null, outputFile, {
+          partial: code !== 0,
+          errorMessage: code !== 0 ? lastError : null
+        });
       } catch (error) {
-        finish(error);
+        if (code !== 0) {
+          finish(new Error(`Downloader feilet: ${stderr.trim().split('\n').pop() || `exit code ${code}`}`));
+        } else {
+          finish(error);
+        }
       }
     });
+  });
+}
+
+function parseTransfer(line, onTransfer) {
+  const match = line.match(/(\d+(?:\.\d+)?)%.*?of\s+([\d.]+)([KMG]i?B).*?at\s+([\d.]+)([KMG]i?B\/s).*?(?:ETA\s+([\d:]+))?/i);
+  if (!match) return;
+  onTransfer({
+    percent: Math.min(99, Math.round(Number(match[1]))),
+    downloaded: `${match[1]}% av ${match[2]} ${match[3]}`,
+    speed: `${match[4]} ${match[5]}`,
+    eta: match[6] || null
   });
 }
 

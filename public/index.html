@@ -24,7 +24,10 @@
           <span class="brand-mark" aria-hidden="true"><img src="favicon/favicon.svg" alt="" /></span>
           <span><strong>LS NEDLASTER</strong><small>HEI SNUPPA :)</small></span>
         </a>
-        <a class="status-chip" href="https://www.lensmann.studio/">TILBAKE TIL STUDIO <span aria-hidden="true">↗</span></a>
+        <div class="topbar-actions">
+          <a class="drive-nav" href="https://drive.lensmann.studio/files/LS%20NEDLASTEREN/" target="_blank" rel="noopener"><span class="drive-nav-icon" aria-hidden="true">↗</span> ÅPNE LS-MAPPE</a>
+          <a class="status-chip" href="https://www.lensmann.studio/">TILBAKE TIL STUDIO <span aria-hidden="true">↗</span></a>
+        </div>
       </header>
 
       <main>
@@ -123,12 +126,19 @@
               <p id="media-meta">Henter informasjon...</p>
             </div>
           </div>
+          <div class="playlist-overview" id="playlist-overview" hidden>
+            <strong id="playlist-count">0 av 0 ferdig</strong>
+            <span id="playlist-active">Venter på aktivt element</span>
+            <span id="playlist-eta">Beregner tid igjen...</span>
+          </div>
           <div class="playlist-items" id="playlist-items" hidden></div>
           <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
           <p class="progress-detail" id="progress-detail">Venter på lokal demo-worker...</p>
           <div class="progress-actions">
             <button class="cancel-button" id="cancel-button" type="button" hidden>AVBRYT JOBB</button>
-            <button class="download-button" id="download-button" type="button" hidden>LAST NED FIL <span aria-hidden="true">↓</span></button>
+            <button class="download-button" id="download-button" type="button" disabled hidden>LAST NED FIL <span aria-hidden="true">↓</span></button>
+            <a class="drive-button" id="drive-root-button" href="https://drive.lensmann.studio/files/LS%20NEDLASTEREN/" target="_blank" rel="noopener" hidden>ÅPNE LS-MAPPE ↗</a>
+            <a class="drive-button drive-button--job" id="drive-job-button" href="#" target="_blank" rel="noopener" hidden>ÅPNE JOBBMAPPE ↗</a>
           </div>
         </section>
       </main>
@@ -146,6 +156,12 @@
         <button class="logs-close" id="logs-close" type="button" aria-label="Lukk jobblogg">×</button>
       </div>
       <div class="logs-status" id="logs-status">Ingen aktiv jobb.</div>
+      <div class="system-monitor" id="system-monitor" hidden></div>
+      <div class="log-tabs" role="tablist" aria-label="Loggtype">
+        <button class="log-tab is-active" data-log-source="app" type="button">VANLIG</button>
+        <button class="log-tab" data-log-source="ffmpeg" type="button">FFMPEG</button>
+        <button class="log-tab" data-log-source="ytdlp" type="button">YT-DLP</button>
+      </div>
       <pre id="logs-content">Start en jobb for å se teknisk status.</pre>
     </section>
 

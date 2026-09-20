@@ -21,6 +21,8 @@ const progressValue = document.querySelector('#progress-value');
 const progressTitle = document.querySelector('#progress-title');
 const progressDetail = document.querySelector('#progress-detail');
 const downloadButton = document.querySelector('#download-button');
+const driveRootButton = document.querySelector('#drive-root-button');
+const driveJobButton = document.querySelector('#drive-job-button');
 const cancelButton = document.querySelector('#cancel-button');
 const mediaSummary = document.querySelector('#media-summary');
 const mediaThumbnail = document.querySelector('#media-thumbnail');
@@ -31,8 +33,14 @@ const logsPanel = document.querySelector('#logs-panel');
 const logsClose = document.querySelector('#logs-close');
 const logsContent = document.querySelector('#logs-content');
 const logsStatus = document.querySelector('#logs-status');
+const logTabs = document.querySelectorAll('.log-tab');
+const systemMonitor = document.querySelector('#system-monitor');
 const jobNumberElement = document.querySelector('#job-number');
 const playlistItems = document.querySelector('#playlist-items');
+const playlistOverview = document.querySelector('#playlist-overview');
+const playlistCount = document.querySelector('#playlist-count');
+const playlistActive = document.querySelector('#playlist-active');
+const playlistEta = document.querySelector('#playlist-eta');
 const kevinTrigger = document.querySelector('#kevin-trigger');
 const kevinModal = document.querySelector('#kevin-modal');
 const kevinModalClose = document.querySelector('#kevin-modal-close');
@@ -59,6 +67,11 @@ const videoFormats = ['mp4', 'mkv', 'webm'];
 let currentJobId = null;
 let pollTimer;
 let selectedMediaUrl = '';
+let progressSamples = [];
+let visualProgress = 0;
+let visualProgressTimer;
+let currentLogs = [];
+let selectedLogSource = 'app';
 
 function setUrlState() {
   clearButton.hidden = urlInput.value.length === 0;
@@ -176,6 +189,23 @@ function renderPlaylistItems(items) {
 }
 
 function updatePlaylistItems(items) {
+  if (!items || items.length === 0) return;
+  playlistOverview.hidden = false;
+  const completed = items.filter((item) => item.status === 'completed').length;
+  const active = items.find((item) => item.status === 'processing');
+  playlistCount.textContent = `${completed} av ${items.length} ferdig`;
+  playlistActive.textContent = active ? `Aktiv: ${active.title}` : completed === items.length ? 'Alle elementer ferdig' : 'Venter på aktivt element';
+  const now = Date.now();
+  const currentProgress = items.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / items.length;
+  progressSamples.push({ time: now, progress: currentProgress });
+  progressSamples = progressSamples.filter((sample) => now - sample.time < 15000);
+  if (progressSamples.length > 1 && currentProgress > progressSamples[0].progress) {
+    const first = progressSamples[0];
+    const rate = (currentProgress - first.progress) / ((now - first.time) / 1000);
+    playlistEta.textContent = `Ca. ${formatEta((100 - currentProgress) / rate)} igjen`;
+  } else {
+    playlistEta.textContent = 'Beregner tid igjen...';
+  }
   for (const item of items || []) {
     const row = playlistItems.querySelector(`[data-index="${item.index}"]`);
     if (!row) continue;
@@ -184,6 +214,11 @@ function updatePlaylistItems(items) {
     row.classList.toggle('is-complete', item.status === 'completed');
     row.classList.toggle('is-failed', item.status === 'failed');
   }
+}
+
+function formatEta(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 60) return `${Math.max(1, Math.round(seconds || 1))} sek`;
+  return `${Math.floor(seconds / 60)} min`;
 }
 
 async function readJsonResponse(response, fallbackMessage) {
@@ -200,11 +235,18 @@ function resetProgress() {
   currentJobId = null;
   progressPanel.hidden = true;
   downloadButton.hidden = true;
+  downloadButton.disabled = true;
+  driveRootButton.hidden = true;
+  driveJobButton.hidden = true;
   cancelButton.hidden = true;
   mediaSummary.hidden = true;
   mediaThumbnail.removeAttribute('src');
   playlistItems.replaceChildren();
   playlistItems.hidden = true;
+  playlistOverview.hidden = true;
+  progressSamples = [];
+  window.clearInterval(visualProgressTimer);
+  visualProgress = 0;
   setProgress(0, 'Klargjører filen', 'Venter på serveren...');
 }
 
@@ -234,6 +276,34 @@ function showMetadata(metadata) {
   renderPlaylistItems(metadata.items || []);
 }
 
+function showTransfer(transfer, job) {
+  if (!transfer) {
+    if (job?.speedMode === 'fast') {
+      mediaSummary.hidden = false;
+      mediaTitle.textContent = 'Rask nedlasting';
+      mediaMeta.textContent = `${job.format.toUpperCase()} · starter direkte · metadata hoppet over`;
+    }
+    return;
+  }
+  mediaSummary.hidden = false;
+  mediaTitle.textContent = job?.metadata?.title || 'Laster ned';
+  mediaMeta.textContent = `${transfer.downloaded} · ${transfer.speed}${transfer.eta ? ` · ETA ${transfer.eta}` : ''}`;
+}
+
+function animateProgress(target) {
+  const safeTarget = Math.max(0, Math.min(100, Number(target) || 0));
+  window.clearInterval(visualProgressTimer);
+  visualProgressTimer = window.setInterval(() => {
+    if (visualProgress >= safeTarget) {
+      window.clearInterval(visualProgressTimer);
+      return;
+    }
+    const step = safeTarget === 100 ? Math.max(.35, (safeTarget - visualProgress) * .08) : Math.max(.2, (safeTarget - visualProgress) * .12);
+    visualProgress = Math.min(safeTarget, visualProgress + step);
+    setProgress(visualProgress, progressTitle.textContent, progressDetail.textContent);
+  }, 80);
+}
+
 async function pollJob(jobId) {
   try {
     const response = await fetch(`/api/jobs/${jobId}`);
@@ -246,13 +316,22 @@ async function pollJob(jobId) {
 
     const detail = job.phase || (job.status === 'queued' ? 'Venter i kø...' : job.status === 'processing' ? 'Behandler innhold...' : 'Filen er klar.');
     showMetadata(job.metadata);
+    showTransfer(job.transfer, job);
     updatePlaylistItems(job.items);
-    setProgress(job.progress, job.status === 'completed' ? 'Filen er klar' : 'Behandler filen', detail);
+    progressTitle.textContent = job.status === 'completed' ? (job.partial ? 'Delvis ferdig' : 'Filen er klar') : 'Behandler filen';
+    progressDetail.textContent = detail;
+    animateProgress(job.progress);
 
     if (job.status === 'completed') {
       cancelButton.hidden = true;
       downloadButton.hidden = false;
+      downloadButton.disabled = false;
       downloadButton.firstChild.textContent = `LAST NED ${videoFormats.includes(job.format) ? 'VIDEO' : job.format.toUpperCase()} `;
+      if (job.saveMode === 'media') {
+        driveRootButton.hidden = false;
+        driveJobButton.hidden = false;
+        driveJobButton.href = `https://drive.lensmann.studio/files/LS%20NEDLASTEREN/jobb${job.jobNumber}/`;
+      }
       return;
     }
 
@@ -316,8 +395,28 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
-downloadButton.addEventListener('click', () => {
-  if (currentJobId) window.location.href = `/api/jobs/${currentJobId}/download`;
+downloadButton.addEventListener('click', async () => {
+  if (!currentJobId || downloadButton.disabled) return;
+  downloadButton.disabled = true;
+  downloadButton.firstChild.textContent = 'FORBEREDER NEDLASTING ';
+  try {
+    const response = await fetch(`/api/jobs/${currentJobId}/download`);
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || 'Filen er ikke klar ennå.');
+    }
+    const blob = await response.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/)?.[1] || 'laensmann-download';
+    link.click();
+    URL.revokeObjectURL(link.href);
+    downloadButton.firstChild.textContent = 'LAST NED IGJEN ';
+  } catch (error) {
+    formMessage.textContent = error.message;
+    downloadButton.disabled = false;
+    downloadButton.firstChild.textContent = 'LAST NED FIL ';
+  }
 });
 
 async function cancelCurrentJob() {
@@ -336,6 +435,7 @@ cancelButton.addEventListener('click', cancelCurrentJob);
 
 diagnosticsButton.addEventListener('click', async () => {
   logsPanel.hidden = false;
+  loadSystemMonitor();
   if (!currentJobId) {
     logsStatus.textContent = 'Ingen aktiv jobb.';
     return;
@@ -346,7 +446,8 @@ diagnosticsButton.addEventListener('click', async () => {
     const status = await readJsonResponse(statusResponse, 'Kunne ikke lese jobbstatus.');
     const payload = await readJsonResponse(response, 'Kunne ikke lese jobbloggen.');
     logsStatus.textContent = `Jobb ${currentJobId} · ${status.status} · ${status.progress}% · ${status.format}`;
-    logsContent.textContent = payload.logs.map((entry) => `[${entry.time}] ${entry.message}`).join('\n') || 'Ingen logger ennå.';
+    currentLogs = payload.logs;
+    renderSelectedLogs();
   } catch {
     try {
       const response = await fetch('/api/logs');
@@ -358,7 +459,30 @@ diagnosticsButton.addEventListener('click', async () => {
   }
 });
 
+async function loadSystemMonitor() {
+  try {
+    const response = await fetch('/api/system');
+    const system = await readJsonResponse(response, 'Kunne ikke hente serverstatus.');
+    const formatBytes = (bytes) => `${(Number(bytes) / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    systemMonitor.hidden = false;
+    systemMonitor.innerHTML = `<div><strong>CPU</strong><span>${system.cpuPercent}%</span></div><div><strong>RAM</strong><span>${system.memoryPercent}% (${formatBytes(system.memoryUsed)} / ${formatBytes(system.memoryTotal)})</span></div><div><strong>DISK</strong><span>${formatBytes(system.diskFree)} ledig av ${formatBytes(system.diskTotal)}</span></div><div><strong>JOBBER</strong><span>${system.jobs.active} aktive · ${system.jobs.queued} i kø · maks ${system.jobs.maxConcurrent}</span></div><div><strong>VERKTØY</strong><span>yt-dlp ${system.versions['yt-dlp']} · FFmpeg ${system.versions.ffmpeg}</span></div>`;
+  } catch (error) {
+    systemMonitor.hidden = false;
+    systemMonitor.textContent = error.message;
+  }
+}
+
+function renderSelectedLogs() {
+  const logs = currentLogs.filter((entry) => (entry.source || 'app') === selectedLogSource);
+  logsContent.textContent = logs.map((entry) => `[${entry.time}] ${entry.message}`).join('\n') || 'Ingen logger i denne fanen ennå.';
+}
+
 logsClose.addEventListener('click', () => { logsPanel.hidden = true; });
+logTabs.forEach((tab) => tab.addEventListener('click', () => {
+  selectedLogSource = tab.dataset.logSource;
+  logTabs.forEach((item) => item.classList.toggle('is-active', item === tab));
+  renderSelectedLogs();
+}));
 kevinTrigger.addEventListener('click', () => {
   kevinModal.hidden = false;
   kevinModalClose.focus();
